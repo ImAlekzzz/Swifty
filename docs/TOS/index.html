@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fcf8fe">
+<meta name="description" content="Terms of Service for Swifty.">
+<title>Terms of Service · Swifty</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@8..144,100..1000&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fcf8fe;--surf:#f3eff7;--surf2:#e9e4f0;--text:#1c1b20;--muted:#5d5b66;--pri:#4b52c9;--onpri:#fff;--tonal:#dfe0ff;--ontonal:#16196b;--line:rgba(28,27,32,.12);--code:#ebe6f2}
+:root[data-theme=dark]{--bg:#111214;--surf:#1a1b1e;--surf2:#232529;--text:#f2f2f2;--muted:#c7c7c7;--pri:#a5abf3;--onpri:#111214;--tonal:#2e3170;--ontonal:#dfe0ff;--line:rgba(255,255,255,.12);--code:#0d0e10}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:88px}
+body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.6 "Google Sans Flex",system-ui,sans-serif;transition:background .2s}
+a{color:var(--pri);text-underline-offset:3px}
+.ms{font-family:"Material Symbols Rounded";font-size:24px;line-height:1;font-weight:400;font-feature-settings:"liga";-webkit-font-feature-settings:"liga";vertical-align:middle;user-select:none}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.bar{max-width:1040px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:20px}
+.brand{font-weight:700;font-size:20px;letter-spacing:-.02em;color:var(--text);text-decoration:none;margin-right:auto}
+nav a{color:var(--muted);text-decoration:none;font-weight:500;padding:8px 14px;border-radius:999px}
+nav a:hover{background:var(--surf2);color:var(--text)}
+.icon-btn{border:0;background:var(--surf2);color:var(--text);width:44px;height:44px;border-radius:999px;cursor:pointer;transition:border-radius .16s}
+.icon-btn:hover{border-radius:14px}
+main{max-width:1040px;margin:0 auto;padding:0 24px 64px}
+.hero{padding:88px 0 56px}
+h1{font-size:clamp(40px,7vw,76px);line-height:1.02;letter-spacing:-.04em;font-weight:800;margin:0 0 20px;max-width:14ch}
+.hero p{font-size:20px;color:var(--muted);max-width:60ch;margin:0 0 32px}
+.btns{display:flex;gap:12px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:10px;height:56px;padding:0 26px;border-radius:999px;background:var(--pri);color:var(--onpri);font-weight:700;text-decoration:none;transition:border-radius .16s,transform .05s}
+.btn.t{background:var(--tonal);color:var(--ontonal)}
+.btn:hover{border-radius:18px}.btn:active{transform:translateY(1px)}
+:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--tonal);color:var(--ontonal);border-radius:999px;padding:6px 16px 6px 12px;font-size:15px;font-weight:600;margin-bottom:24px}
+section{padding:40px 0}
+h2{display:flex;align-items:center;gap:12px;font-size:clamp(28px,4vw,40px);letter-spacing:-.03em;margin:0 0 24px}
+h2 .ms{background:var(--tonal);color:var(--ontonal);border-radius:16px;padding:10px;font-size:28px}
+h3{font-size:21px;margin:0 0 8px;letter-spacing:-.01em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.card{background:var(--surf);border-radius:28px;padding:24px;border:1px solid var(--line)}
+.card:nth-child(4n+1){border-radius:28px 28px 28px 80px}
+.card .ms{color:var(--pri);font-size:32px;margin-bottom:12px;display:block}
+.card p{margin:0;color:var(--muted)}
+.card ul{padding-left:0;list-style:none;margin:16px 0 0}
+.card li{display:flex;gap:10px;margin:10px 0;color:var(--muted);font-size:15px}
+.card li .ms{font-size:20px;margin:2px 0 0;flex:none}
+.card .btn{height:48px;margin-top:8px;font-size:15px}
+code{background:var(--code);padding:2px 7px;border-radius:8px;font:500 .88em ui-monospace,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);border-radius:20px;padding:18px 22px;overflow-x:auto;font:500 14.5px/1.6 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);margin:16px 0}
+pre code{background:none;padding:0}
+details{background:var(--surf);border-radius:20px;border:1px solid var(--line);margin:10px 0;padding:0 22px}
+summary{cursor:pointer;font-weight:700;padding:18px 0;list-style:none;display:flex;justify-content:space-between;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary .ms{transition:transform .2s}details[open] summary .ms{transform:rotate(180deg)}
+details>div{padding-bottom:18px;color:var(--muted)}
+.links{display:flex;flex-wrap:wrap;gap:8px}
+.links a{background:var(--surf2);color:var(--text);text-decoration:none;border-radius:999px;padding:6px 14px;font-weight:600;font-size:15px}
+.links a:hover{background:var(--tonal)}
+footer{border-top:1px solid var(--line);padding:32px 24px;text-align:center;color:var(--muted);font-size:15px;max-width:1040px;margin:0 auto}
+@media(max-width:640px){nav{display:none}.hero{padding-top:56px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+
+.doc{max-width:760px;padding-top:72px}
+.doc h1{max-width:none;font-size:clamp(36px,6vw,60px);margin-bottom:12px}
+.lead{font-size:20px;color:var(--muted);margin:0 0 32px}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 40px}
+.toc a{background:var(--surf2);color:var(--text);text-decoration:none;border-radius:999px;padding:6px 14px;font-weight:600;font-size:15px}
+.toc a:hover{background:var(--tonal)}
+.sec{background:var(--surf);border:1px solid var(--line);border-radius:28px;padding:24px 28px;margin:16px 0}
+.sec:nth-of-type(4n+1){border-radius:28px 28px 28px 72px}
+.sec h2{font-size:24px;margin:0 0 10px;letter-spacing:-.02em}
+.sec p{margin:8px 0;color:var(--muted)}
+</style>
+</head>
+<body>
+<header><div class="bar">
+<a class="brand" href="https://imalekzzz.github.io/swifty/">Swifty</a>
+<nav><a href="https://imalekzzz.github.io/swifty/docs/TOS/">Terms of Service</a><a href="https://imalekzzz.github.io/swifty/docs/privacy-policy/">Privacy Policy</a></nav>
+<button class="icon-btn" id="theme" aria-label="Toggle dark mode"><span class="ms">dark_mode</span></button>
+</div></header>
+<main class="doc">
+<h1>Terms of Service</h1>
+<p class="lead">In these Terms, "Swifty", "I", "we", and "me" refer to ImAlekz.</p>
+<nav class="toc" aria-label="Sections"><a href="#acceptable-use">Acceptable Use</a><a href="#prohibited-conduct">Prohibited Conduct</a><a href="#account-responsibilities">Account Responsibilities</a><a href="#intellectual-property">Intellectual Property</a><a href="#user-content">User Content</a><a href="#license-to-use-the-service">License to Use the Service</a><a href="#termination">Termination</a><a href="#disclaimers">Disclaimers</a><a href="#limitation-of-liability">Limitation of Liability</a><a href="#changes-to-these-terms">Changes to These Terms</a><a href="#governing-law">Governing Law</a><a href="#contact-information">Contact Information</a></nav>
+<section class="sec" id="acceptable-use"><h2>Acceptable Use</h2><p>users must use it lawfully and not abuse or interfere with it without releasing it as open-source.</p></section>
+<section class="sec" id="prohibited-conduct"><h2>Prohibited Conduct</h2><p>Forking the repository and making it private or closed-source is not prohibited by this license, but you may not misrepresent Swifty or remove required notices.</p><p>and k-pop (just kidding).</p></section>
+<section class="sec" id="account-responsibilities"><h2>Account Responsibilities</h2><p>If you put your Discord account details to apps or websites impersonating Swifty, we do not hold responsibility for the loss of your account.</p></section>
+<section class="sec" id="intellectual-property"><h2>Intellectual Property</h2><p>All Swifty branding is owned by the <a href="https://github.com/swiftify-org/">Swiftify Organisation</a></p><p>All Discord branding belong to <a href="https://discord.com">Discord</a></p><p>Discord Rich Presence belongs to <a href="https://discord.com">Discord</a></p><p>LRCLIB Lyrics belong to <a href="https://lrclib.net">LRCLIB</a></p><p>MusicBrainz Lyrics belong to <a href="https://musicbrainz.org">MusicBrainz</a></p></section>
+<section class="sec" id="user-content"><h2>User Content</h2><p>Swifty does not provide user accounts or user-generated public posting features. This section does not apply unless such features are added in the future.</p></section>
+<section class="sec" id="license-to-use-the-service"><h2>License to Use the Service</h2><p>You may use Swifty subject to these Terms and the GPLv3 license that applies to the software.</p></section>
+<section class="sec" id="termination"><h2>Termination</h2><p>Because Swifty is open source and does not use user accounts, there is no account termination process. We may discontinue development, hosting, or related services at any time.</p></section>
+<section class="sec" id="disclaimers"><h2>Disclaimers</h2><p>Swifty is provided “as is” and “as available,” without warranties of any kind.</p></section>
+<section class="sec" id="limitation-of-liability"><h2>Limitation of Liability</h2><p>To the maximum extent permitted by law, we are not liable for damages arising from use of Swifty.</p></section>
+<section class="sec" id="changes-to-these-terms"><h2>Changes to These Terms</h2><p>We may update these Terms from time to time. The latest version will be posted in the repository commits.</p></section>
+<section class="sec" id="governing-law"><h2>Governing Law</h2><p>These Terms are governed by the laws of Greece.</p></section>
+<section class="sec" id="contact-information"><h2>Contact Information</h2><p>Questions can be raised through GitHub Issues.</p></section>
+</main>
+<footer><a href="https://imalekzzz.github.io/swifty/">Swifty</a> · <a href="https://github.com/ImAlekzzz/swifty/releases">Releases</a> · <a href="https://github.com/ImAlekzzz/swifty/issues">Issues</a> · <a href="https://imalekzzz.github.io/swifty/docs/TOS/">Terms of Service</a> · <a href="https://imalekzzz.github.io/swifty/docs/privacy-policy/">Privacy Policy</a></footer>
+<script>
+(function(){
+var r=document.documentElement,b=document.getElementById("theme"),i=b.firstChild,s=null;
+try{s=localStorage.getItem("theme")}catch(e){}
+function set(t){r.dataset.theme=t;i.textContent=t==="dark"?"light_mode":"dark_mode";document.querySelector('meta[name=theme-color]').content=t==="dark"?"#111214":"#fcf8fe"}
+set(s||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+b.onclick=function(){var t=r.dataset.theme==="dark"?"light":"dark";set(t);try{localStorage.setItem("theme",t)}catch(e){}}
+})();
+</script>
+</body>
+</html>

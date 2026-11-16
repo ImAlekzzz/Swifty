@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fcf8fe">
+<meta name="description" content="A local music player for Wayland, in Material 3. Rust audio core, Qt Quick interface.">
+<title>Swifty</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@8..144,100..1000&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fcf8fe;--surf:#f3eff7;--surf2:#e9e4f0;--text:#1c1b20;--muted:#5d5b66;--pri:#4b52c9;--onpri:#fff;--tonal:#dfe0ff;--ontonal:#16196b;--line:rgba(28,27,32,.12);--code:#ebe6f2}
+:root[data-theme=dark]{--bg:#111214;--surf:#1a1b1e;--surf2:#232529;--text:#f2f2f2;--muted:#c7c7c7;--pri:#a5abf3;--onpri:#111214;--tonal:#2e3170;--ontonal:#dfe0ff;--line:rgba(255,255,255,.12);--code:#0d0e10}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:88px}
+body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.6 "Google Sans Flex",system-ui,sans-serif;transition:background .2s}
+a{color:var(--pri);text-underline-offset:3px}
+.ms{font-family:"Material Symbols Rounded";font-size:24px;line-height:1;font-weight:400;font-feature-settings:"liga";-webkit-font-feature-settings:"liga";vertical-align:middle;user-select:none}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.bar{max-width:1040px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:20px}
+.brand{font-weight:700;font-size:20px;letter-spacing:-.02em;color:var(--text);text-decoration:none;margin-right:auto}
+nav a{color:var(--muted);text-decoration:none;font-weight:500;padding:8px 14px;border-radius:999px}
+nav a:hover{background:var(--surf2);color:var(--text)}
+.icon-btn{border:0;background:var(--surf2);color:var(--text);width:44px;height:44px;border-radius:999px;cursor:pointer;transition:border-radius .16s}
+.icon-btn:hover{border-radius:14px}
+main{max-width:1040px;margin:0 auto;padding:0 24px 64px}
+.hero{padding:88px 0 56px}
+h1{font-size:clamp(40px,7vw,76px);line-height:1.02;letter-spacing:-.04em;font-weight:800;margin:0 0 20px;max-width:14ch}
+.hero p{font-size:20px;color:var(--muted);max-width:60ch;margin:0 0 32px}
+.btns{display:flex;gap:12px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:10px;height:56px;padding:0 26px;border-radius:999px;background:var(--pri);color:var(--onpri);font-weight:700;text-decoration:none;transition:border-radius .16s,transform .05s}
+.btn.t{background:var(--tonal);color:var(--ontonal)}
+.btn:hover{border-radius:18px}.btn:active{transform:translateY(1px)}
+:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--tonal);color:var(--ontonal);border-radius:999px;padding:6px 16px 6px 12px;font-size:15px;font-weight:600;margin-bottom:24px}
+section{padding:40px 0}
+h2{display:flex;align-items:center;gap:12px;font-size:clamp(28px,4vw,40px);letter-spacing:-.03em;margin:0 0 24px}
+h2 .ms{background:var(--tonal);color:var(--ontonal);border-radius:16px;padding:10px;font-size:28px}
+h3{font-size:21px;margin:0 0 8px;letter-spacing:-.01em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.card{background:var(--surf);border-radius:28px;padding:24px;border:1px solid var(--line)}
+.card:nth-child(4n+1){border-radius:28px 28px 28px 80px}
+.card .ms{color:var(--pri);font-size:32px;margin-bottom:12px;display:block}
+.card p{margin:0;color:var(--muted)}
+.card ul{padding-left:0;list-style:none;margin:16px 0 0}
+.card li{display:flex;gap:10px;margin:10px 0;color:var(--muted);font-size:15px}
+.card li .ms{font-size:20px;margin:2px 0 0;flex:none}
+.card .btn{height:48px;margin-top:8px;font-size:15px}
+code{background:var(--code);padding:2px 7px;border-radius:8px;font:500 .88em ui-monospace,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);border-radius:20px;padding:18px 22px;overflow-x:auto;font:500 14.5px/1.6 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);margin:16px 0}
+pre code{background:none;padding:0}
+details{background:var(--surf);border-radius:20px;border:1px solid var(--line);margin:10px 0;padding:0 22px}
+summary{cursor:pointer;font-weight:700;padding:18px 0;list-style:none;display:flex;justify-content:space-between;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary .ms{transition:transform .2s}details[open] summary .ms{transform:rotate(180deg)}
+details>div{padding-bottom:18px;color:var(--muted)}
+.links{display:flex;flex-wrap:wrap;gap:8px}
+.links a{background:var(--surf2);color:var(--text);text-decoration:none;border-radius:999px;padding:6px 14px;font-weight:600;font-size:15px}
+.links a:hover{background:var(--tonal)}
+footer{border-top:1px solid var(--line);padding:32px 24px;text-align:center;color:var(--muted);font-size:15px;max-width:1040px;margin:0 auto}
+@media(max-width:640px){nav{display:none}.hero{padding-top:56px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header><div class="bar">
+<a class="brand" href="#top">Swifty</a>
+<nav><a href="#features">Features</a><a href="#install">Install</a><a href="#start">Before you start</a><a href="#control">Control</a></nav>
+<button class="icon-btn" id="theme" aria-label="Toggle dark mode"><span class="ms">dark_mode</span></button>
+</div></header>
+
+<main id="top">
+<div class="hero">
+<div class="chip"><span class="ms">music_note</span>No account, no subscription</div>
+<h1>Swifty, your music, <em>local</em>.</h1>
+<p>A local music player for Wayland, in Material 3. It plays the music on your computer, with a Rust audio core and a Qt Quick interface. A fork of <a href="https://github.com/swiftify-org/swiftify">Swiftify</a> by addenator, with everything of Spotify removed.</p>
+<div class="btns">
+<a class="btn" href="#install"><span class="ms">download</span>Download</a>
+<a class="btn t" href="https://github.com/ImAlekzzz/swifty"><span class="ms">code</span>Source code</a>
+<a class="btn t" href="https://github.com/ImAlekzzz/swifty/issues"><span class="ms">bug_report</span>Issues</a>
+</div>
+</div>
+
+<section id="features">
+<h2><span class="ms">auto_awesome</span>What it does</h2>
+<div class="grid">
+<div class="card"><span class="ms">folder_open</span><h3>Your own files</h3><p>Plays folders and files of your own, with their tags and cover art.</p></div>
+<div class="card"><span class="ms">favorite</span><h3>Playlists</h3><p>Playlists, favourites and play counts.</p></div>
+<div class="card"><span class="ms">lyrics</span><h3>Synced lyrics</h3><p>From LRCLIB and NetEase.</p></div>
+<div class="card"><span class="ms">graphic_eq</span><h3>Spectrum and immersive player</h3><p>A spectrum and a full screen player.</p></div>
+<div class="card"><span class="ms">person</span><h3>Artist pictures</h3><p>From Discogs, with your own free token.</p></div>
+<div class="card"><span class="ms">sports_esports</span><h3>Discord rich presence</h3><p>Shown as “Listening to Swifty”.</p></div>
+<div class="card"><span class="ms">keyboard_command_key</span><h3>Media keys</h3><p>MPRIS on Linux, the system controls on macOS and Windows.</p></div>
+<div class="card"><span class="ms">link</span><h3>swifty:// links</h3><p>Control it from a browser or a launcher.</p></div>
+</div>
+</section>
+
+<section id="install">
+<h2><span class="ms">download</span>Install</h2>
+<p>Every build is on the <a href="https://github.com/ImAlekzzz/swifty/releases">releases page</a>. Pick the one for your system.</p>
+<div class="grid">
+<div class="card"><span class="ms">terminal</span><h3>Fedora and RPM</h3><p><code>swifty-*.rpm</code></p><ul><li><span class="ms">info</span>Install with <code>sudo dnf install ./swifty-*.rpm</code></li></ul></div>
+<div class="card"><span class="ms">inventory_2</span><h3>Any Linux</h3><p>x86_64, Qt included · <code>.tar.gz</code></p><ul><li><span class="ms">info</span>Unpack it anywhere and run <code>bin/swifty</code></li></ul></div>
+<div class="card"><span class="ms">laptop_mac</span><h3>macOS</h3><p>Apple silicon · <code>.dmg</code></p><ul><li><span class="ms">info</span>Open it and drag Swifty to Applications.</li></ul></div>
+<div class="card"><span class="ms">desktop_windows</span><h3>Windows</h3><p>Build folder</p><ul><li><span class="ms">info</span>Move it somewhere you will keep it and run <code>bin\swifty.exe</code></li></ul></div>
+</div>
+<p>If macOS refuses to open the app because it is not signed, run this once, then open it as usual:</p>
+<pre>xattr -dr com.apple.quarantine /Applications/Swifty.app</pre>
+
+<h3 style="margin-top:32px">Build it yourself</h3>
+<p>Arch and Debian have no download: build them from source with the scripts below, and any other system can too. Building needs the network, because the interface and icon fonts are downloaded (each is checked against a hash). Qt 6.10 is what the source asks for.</p>
+<pre>git clone https://github.com/ImAlekzzz/swifty.git
+cd swifty</pre>
+<details><summary>Arch Linux<span class="ms">expand_more</span></summary><div><pre>cd packaging/arch
+makepkg -si</pre></div></details>
+<details><summary>Fedora, from source<span class="ms">expand_more</span></summary><div><pre>./tools/build-rpm.sh --install-deps
+sudo dnf install dist/swifty-*.rpm</pre></div></details>
+<details><summary>Debian and Ubuntu<span class="ms">expand_more</span></summary><div><pre>./tools/build-debian.sh --install-deps</pre></div></details>
+<details><summary>Any Linux, with Qt included<span class="ms">expand_more</span></summary><div>Makes the same tarball as the download.<pre>./tools/build-linux-tarball.sh --qt ~/Qt/6.10.0/gcc_64</pre></div></details>
+<details><summary>macOS, from source<span class="ms">expand_more</span></summary><div><pre>./tools/build-macos-dmg.sh</pre></div></details>
+<details><summary>Windows, from source<span class="ms">expand_more</span></summary><div>In PowerShell:<pre>.\tools\build-windows.ps1</pre>Move the folder it makes to a place you will keep it, such as <code>%LOCALAPPDATA%\Programs\Swifty</code>, and run <code>bin\swifty.exe</code> from there.</div></details>
+</section>
+
+<section id="start">
+<h2><span class="ms">checklist</span>Before you start</h2>
+<div class="grid">
+<div class="card"><span class="ms">library_music</span><h3>Your music</h3><p>Add a folder or files from the home screen or the settings.</p></div>
+<div class="card"><span class="ms">database</span><h3>Qt’s SQLite driver</h3><p>Swifty keeps its playlists and library in SQLite. Arch, Fedora and the Qt installer include the driver. On Debian and Ubuntu install <code>libqt6sql6-sqlite</code>.</p></div>
+<div class="card"><span class="ms">key</span><h3>Artist pictures (optional)</h3><p>Make a free personal token at discogs.com/settings/developers and paste it in Settings, Files, Artist Pictures.</p></div>
+<div class="card"><span class="ms">sports_esports</span><h3>Discord (optional)</h3><p>It works out of the box. You need the Discord desktop app running, and activity sharing on in Discord’s Activity Privacy settings. To show your own name instead, paste your own Application ID in Settings, Discord.</p></div>
+</div>
+</section>
+
+<section id="control">
+<h2><span class="ms">settings_remote</span>Control it from outside</h2>
+<p>Only one Swifty runs at a time. Starting it again passes the command to the one that is running, so these work as keybinds:</p>
+<pre>swifty --immersive
+swifty --play-pause
+swifty --next
+swifty --previous</pre>
+<p>The same commands work as links, for a browser, a bookmark or a launcher:</p>
+<pre>&lt;a href="swifty://play-pause"&gt;Play or pause&lt;/a&gt;</pre>
+<p>Known links:</p>
+<div class="links"><a href="swifty://play-pause">play-pause</a><a href="swifty://next">next</a><a href="swifty://previous">previous</a><a href="swifty://immersive">immersive</a><a href="swifty://close-immersive">close-immersive</a><a href="swifty://play-recent">play-recent</a><a href="swifty://home">home</a><a href="swifty://playlists">playlists</a><a href="swifty://songs">songs</a><a href="swifty://favourites">favourites</a><a href="swifty://albums">albums</a><a href="swifty://artists">artists</a><a href="swifty://back">back</a></div>
+<p>A link can never change a setting or name a file.</p>
+</section>
+
+<section>
+<h2><span class="ms">balance</span>License and credits</h2>
+<p>Swifty is free software under the GNU General Public License, version 3 or later. It is made from <a href="https://github.com/swiftify-org/swiftify">Swiftify</a> by addenator, and uses Qt, SQLite, QCoro, Symphonia, rodio and other projects under their own licenses. The full list is in <a href="https://github.com/ImAlekzzz/swifty/blob/main/THIRD_PARTY_LICENSES.md">THIRD_PARTY_LICENSES.md</a>.</p>
+<p>The design follows Material 3 Expressive, with a lot of inspiration from <a href="https://github.com/end-4/dots-hyprland">end-4’s dots-hyprland</a>. Fonts are Google Sans Flex and Material Symbols Rounded.</p>
+</section>
+</main>
+
+<footer>Made by <a href="https://github.com/ImAlekzzz">ImAlekzzz</a> · <a href="https://github.com/ImAlekzzz/swifty/releases">Releases</a> · <a href="https://github.com/ImAlekzzz/swifty/issues">Issues</a> · <a href="https://imalekzzz.github.io/swifty/docs/TOS/">Terms of Service</a> · <a href="https://imalekzzz.github.io/swifty/docs/privacy-policy/">Privacy Policy</a></footer>
+
+<script>
+(function(){
+var r=document.documentElement,b=document.getElementById("theme"),i=b.firstChild,s=null;
+try{s=localStorage.getItem("theme")}catch(e){}
+function set(t){r.dataset.theme=t;i.textContent=t==="dark"?"light_mode":"dark_mode";document.querySelector('meta[name=theme-color]').content=t==="dark"?"#111214":"#fcf8fe"}
+set(s||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+b.onclick=function(){var t=r.dataset.theme==="dark"?"light":"dark";set(t);try{localStorage.setItem("theme",t)}catch(e){}}
+})();
+</script>
+</body>
+</html>

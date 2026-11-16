@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fcf8fe">
+<meta name="description" content="Privacy Policy for Swifty.">
+<title>Privacy Policy · Swifty</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@8..144,100..1000&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fcf8fe;--surf:#f3eff7;--surf2:#e9e4f0;--text:#1c1b20;--muted:#5d5b66;--pri:#4b52c9;--onpri:#fff;--tonal:#dfe0ff;--ontonal:#16196b;--line:rgba(28,27,32,.12);--code:#ebe6f2}
+:root[data-theme=dark]{--bg:#111214;--surf:#1a1b1e;--surf2:#232529;--text:#f2f2f2;--muted:#c7c7c7;--pri:#a5abf3;--onpri:#111214;--tonal:#2e3170;--ontonal:#dfe0ff;--line:rgba(255,255,255,.12);--code:#0d0e10}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:88px}
+body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.6 "Google Sans Flex",system-ui,sans-serif;transition:background .2s}
+a{color:var(--pri);text-underline-offset:3px}
+.ms{font-family:"Material Symbols Rounded";font-size:24px;line-height:1;font-weight:400;font-feature-settings:"liga";-webkit-font-feature-settings:"liga";vertical-align:middle;user-select:none}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.bar{max-width:1040px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:20px}
+.brand{font-weight:700;font-size:20px;letter-spacing:-.02em;color:var(--text);text-decoration:none;margin-right:auto}
+nav a{color:var(--muted);text-decoration:none;font-weight:500;padding:8px 14px;border-radius:999px}
+nav a:hover{background:var(--surf2);color:var(--text)}
+.icon-btn{border:0;background:var(--surf2);color:var(--text);width:44px;height:44px;border-radius:999px;cursor:pointer;transition:border-radius .16s}
+.icon-btn:hover{border-radius:14px}
+main{max-width:1040px;margin:0 auto;padding:0 24px 64px}
+.hero{padding:88px 0 56px}
+h1{font-size:clamp(40px,7vw,76px);line-height:1.02;letter-spacing:-.04em;font-weight:800;margin:0 0 20px;max-width:14ch}
+.hero p{font-size:20px;color:var(--muted);max-width:60ch;margin:0 0 32px}
+.btns{display:flex;gap:12px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:10px;height:56px;padding:0 26px;border-radius:999px;background:var(--pri);color:var(--onpri);font-weight:700;text-decoration:none;transition:border-radius .16s,transform .05s}
+.btn.t{background:var(--tonal);color:var(--ontonal)}
+.btn:hover{border-radius:18px}.btn:active{transform:translateY(1px)}
+:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--tonal);color:var(--ontonal);border-radius:999px;padding:6px 16px 6px 12px;font-size:15px;font-weight:600;margin-bottom:24px}
+section{padding:40px 0}
+h2{display:flex;align-items:center;gap:12px;font-size:clamp(28px,4vw,40px);letter-spacing:-.03em;margin:0 0 24px}
+h2 .ms{background:var(--tonal);color:var(--ontonal);border-radius:16px;padding:10px;font-size:28px}
+h3{font-size:21px;margin:0 0 8px;letter-spacing:-.01em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.card{background:var(--surf);border-radius:28px;padding:24px;border:1px solid var(--line)}
+.card:nth-child(4n+1){border-radius:28px 28px 28px 80px}
+.card .ms{color:var(--pri);font-size:32px;margin-bottom:12px;display:block}
+.card p{margin:0;color:var(--muted)}
+.card ul{padding-left:0;list-style:none;margin:16px 0 0}
+.card li{display:flex;gap:10px;margin:10px 0;color:var(--muted);font-size:15px}
+.card li .ms{font-size:20px;margin:2px 0 0;flex:none}
+.card .btn{height:48px;margin-top:8px;font-size:15px}
+code{background:var(--code);padding:2px 7px;border-radius:8px;font:500 .88em ui-monospace,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);border-radius:20px;padding:18px 22px;overflow-x:auto;font:500 14.5px/1.6 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);margin:16px 0}
+pre code{background:none;padding:0}
+details{background:var(--surf);border-radius:20px;border:1px solid var(--line);margin:10px 0;padding:0 22px}
+summary{cursor:pointer;font-weight:700;padding:18px 0;list-style:none;display:flex;justify-content:space-between;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary .ms{transition:transform .2s}details[open] summary .ms{transform:rotate(180deg)}
+details>div{padding-bottom:18px;color:var(--muted)}
+.links{display:flex;flex-wrap:wrap;gap:8px}
+.links a{background:var(--surf2);color:var(--text);text-decoration:none;border-radius:999px;padding:6px 14px;font-weight:600;font-size:15px}
+.links a:hover{background:var(--tonal)}
+footer{border-top:1px solid var(--line);padding:32px 24px;text-align:center;color:var(--muted);font-size:15px;max-width:1040px;margin:0 auto}
+@media(max-width:640px){nav{display:none}.hero{padding-top:56px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+
+.doc{max-width:760px;padding-top:72px}
+.doc h1{max-width:none;font-size:clamp(36px,6vw,60px);margin-bottom:12px}
+.lead{font-size:20px;color:var(--muted);margin:0 0 32px}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 40px}
+.toc a{background:var(--surf2);color:var(--text);text-decoration:none;border-radius:999px;padding:6px 14px;font-weight:600;font-size:15px}
+.toc a:hover{background:var(--tonal)}
+.sec{background:var(--surf);border:1px solid var(--line);border-radius:28px;padding:24px 28px;margin:16px 0}
+.sec:nth-of-type(4n+1){border-radius:28px 28px 28px 72px}
+.sec h2{font-size:24px;margin:0 0 10px;letter-spacing:-.02em}
+.sec p{margin:8px 0;color:var(--muted)}
+</style>
+</head>
+<body>
+<header><div class="bar">
+<a class="brand" href="https://imalekzzz.github.io/swifty/">Swifty</a>
+<nav><a href="https://imalekzzz.github.io/swifty/docs/TOS/">Terms of Service</a><a href="https://imalekzzz.github.io/swifty/docs/privacy-policy/">Privacy Policy</a></nav>
+<button class="icon-btn" id="theme" aria-label="Toggle dark mode"><span class="ms">dark_mode</span></button>
+</div></header>
+<main class="doc">
+<h1>Privacy Policy</h1>
+<p class="lead">How Swifty handles your data.</p>
+<nav class="toc" aria-label="Sections"><a href="#what-swifty-does-and-collects">What Swifty Does And Collects</a><a href="#automatic-data">Automatic Data</a><a href="#local-storage">Local Storage</a><a href="#third-party-services">Third-Party Services</a><a href="#how-data-is-shared">How Data is Shared</a><a href="#how-data-is-used">How Data is Used</a><a href="#retention">Retention</a><a href="#user-rights">User Rights</a><a href="#children-s-privacy">Children’s Privacy</a><a href="#changes-to-this-policy">Changes to This Policy</a></nav>
+<section class="sec" id="what-swifty-does-and-collects"><h2>What Swifty Does And Collects</h2><p>We do not collect personal information.</p></section>
+<section class="sec" id="automatic-data"><h2>Automatic Data</h2><p>Local logs may exist if the user enables debugging mode.</p></section>
+<section class="sec" id="local-storage"><h2>Local Storage</h2><p>Local data such as cache and playlists is stored on the user’s device and only if the user chooses to keep it.</p></section>
+<section class="sec" id="third-party-services"><h2>Third-Party Services</h2><p>Third-party services may receive limited data needed to provide features, including Discord Rich Presence, MusicBrainz, LRCLIB, and Discogs.</p><p>Data shared with third parties is subject to their own privacy policies.</p></section>
+<section class="sec" id="how-data-is-shared"><h2>How Data is Shared</h2><p>Required metadata may be shared with those services so they can perform their function.</p><p>Data shared with third parties is subject to their own privacy policies.</p><p>Users can opt-out of using third-party services in the apps settings.</p></section>
+<section class="sec" id="how-data-is-used"><h2>How Data is Used</h2><p>We do not collect data.</p></section>
+<section class="sec" id="retention"><h2>Retention</h2><p>Local data from Swifty remains on the user’s computer until the user manually deletes it. Retention of data shared with third-party services depends on each service’s privacy policy.</p></section>
+<section class="sec" id="user-rights"><h2>User Rights</h2><p>Users may delete any data stored by Swifty in the cache folder. If data is shared with third-party services, any rights over that data depend on the relevant service’s privacy policy. Swifty does not collect personal information directly from users.</p></section>
+<section class="sec" id="children-s-privacy"><h2>Children’s Privacy</h2><p>Swifty is intended for users of all ages. Swifty does not intentionally collect personal information from children or adults. Any songs imported into Swifty and any lyric content are processed through third-party services and are not linked to users by Swifty.</p></section>
+<section class="sec" id="changes-to-this-policy"><h2>Changes to This Policy</h2><p>We may update this Privacy Policy from time to time. When changes are made, the updated version will be posted in the app, and continued use of Swifty after the update means you accept the revised Privacy Policy.</p></section>
+</main>
+<footer><a href="https://imalekzzz.github.io/swifty/">Swifty</a> · <a href="https://github.com/ImAlekzzz/swifty/releases">Releases</a> · <a href="https://github.com/ImAlekzzz/swifty/issues">Issues</a> · <a href="https://imalekzzz.github.io/swifty/docs/TOS/">Terms of Service</a> · <a href="https://imalekzzz.github.io/swifty/docs/privacy-policy/">Privacy Policy</a></footer>
+<script>
+(function(){
+var r=document.documentElement,b=document.getElementById("theme"),i=b.firstChild,s=null;
+try{s=localStorage.getItem("theme")}catch(e){}
+function set(t){r.dataset.theme=t;i.textContent=t==="dark"?"light_mode":"dark_mode";document.querySelector('meta[name=theme-color]').content=t==="dark"?"#111214":"#fcf8fe"}
+set(s||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+b.onclick=function(){var t=r.dataset.theme==="dark"?"light":"dark";set(t);try{localStorage.setItem("theme",t)}catch(e){}}
+})();
+</script>
+</body>
+</html>
