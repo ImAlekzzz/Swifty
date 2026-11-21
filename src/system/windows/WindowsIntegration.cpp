@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +19,10 @@
 
 #include "system/windows/WindowsIntegration.h"
 
+#ifdef SWIFTY_HAS_SMTC
+#include "system/windows/MediaTransport.h"
+#endif
+
 #include "playback/PlaybackController.h"
 #include "theme/Theme.h"
 
@@ -28,6 +33,7 @@
 #include <QSet>
 #include <QStyle>
 #include <QTimer>
+#include <QUrl>
 #include <QWindow>
 
 #include <windows.h>
@@ -36,27 +42,11 @@
 #include <dwmapi.h>
 #include <shobjidl.h>
 
-#ifdef SWIFTIFY_HAVE_SMTC
-// mingw-w64's windows.foundation.h specialises IReference for BYTE and for
-// boolean, which it also makes an unsigned char; nothing here uses either
-#ifdef __MINGW32__
-#define ____FIReference_1_boolean_INTERFACE_DEFINED__
-#endif
-#include <roapi.h>
-#include <winstring.h>
-#include <wrl/client.h>
-#include <wrl/wrappers/corewrappers.h>
-#include <windows.media.h>
-#include <systemmediatransportcontrolsinterop.h>
-#endif
-
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cwchar>
-#include <functional>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
@@ -74,61 +64,6 @@ COLORREF nativeColor(const QColor &color)
     return RGB(color.red(), color.green(), color.blue());
 }
 
-#ifdef SWIFTIFY_HAVE_SMTC
-// the media buttons' handler, written out by hand: wrl's Callback lives in
-// <wrl/event.h>, which only msvc's sdk ships, and mingw has to build this too
-using ButtonPressedHandler = ABI::Windows::Foundation::ITypedEventHandler<
-    ABI::Windows::Media::SystemMediaTransportControls *,
-    ABI::Windows::Media::SystemMediaTransportControlsButtonPressedEventArgs *>;
-
-class ButtonPressedCallback final : public ButtonPressedHandler
-{
-public:
-    using Function = std::function<void(ABI::Windows::Media::SystemMediaTransportControlsButton)>;
-
-    explicit ButtonPressedCallback(Function function)
-        : m_function(std::move(function))
-    {
-    }
-
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **object) override
-    {
-        if (!object) return E_POINTER;
-        if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_IAgileObject)
-            || IsEqualIID(riid, __uuidof(ButtonPressedHandler))) {
-            *object = static_cast<ButtonPressedHandler *>(this);
-            AddRef();
-            return S_OK;
-        }
-        *object = nullptr;
-        return E_NOINTERFACE;
-    }
-
-    ULONG STDMETHODCALLTYPE AddRef() override { return ++m_references; }
-
-    ULONG STDMETHODCALLTYPE Release() override
-    {
-        const ULONG remaining = --m_references;
-        if (remaining == 0) delete this;
-        return remaining;
-    }
-
-    HRESULT STDMETHODCALLTYPE Invoke(ABI::Windows::Media::ISystemMediaTransportControls *,
-                                     ABI::Windows::Media::ISystemMediaTransportControlsButtonPressedEventArgs *args) override
-    {
-        ABI::Windows::Media::SystemMediaTransportControlsButton button;
-        if (args && SUCCEEDED(args->get_Button(&button))) {
-            m_function(button);
-        }
-        return S_OK;
-    }
-
-private:
-    std::atomic<ULONG> m_references {1};
-    Function m_function;
-};
-#endif
-
 } // namespace
 
 struct WindowsIntegration::Native {
@@ -139,10 +74,10 @@ struct WindowsIntegration::Native {
     QSet<quintptr> readyWindows;
     HWND handle = nullptr;
     std::array<HICON, 4> icons {};
-
-#ifdef SWIFTIFY_HAVE_SMTC
-    Microsoft::WRL::ComPtr<ABI::Windows::Media::ISystemMediaTransportControls> controls;
-    EventRegistrationToken buttonToken {};
+#ifdef SWIFTY_HAS_SMTC
+    std::unique_ptr<MediaTransport> transport;
+    HWND transportWindow = nullptr;
+    QString transportTrack;
 #endif
 
     Native()
@@ -157,20 +92,6 @@ struct WindowsIntegration::Native {
         }
     }
 
-    void cleanupMediaControls()
-    {
-#ifdef SWIFTIFY_HAVE_SMTC
-        if (controls) {
-            if (buttonToken.value != 0) {
-                controls->remove_ButtonPressed(buttonToken);
-                buttonToken.value = 0;
-            }
-            controls->put_IsEnabled(false);
-            controls.Reset();
-        }
-#endif
-    }
-
     ~Native()
     {
         if (handle) RemoveWindowSubclass(handle, &Native::windowProcedure, reinterpret_cast<UINT_PTR>(this));
@@ -180,7 +101,6 @@ struct WindowsIntegration::Native {
         for (HICON icon : icons) {
             if (icon) DestroyIcon(icon);
         }
-        cleanupMediaControls();
         if (ownsCom) CoUninitialize();
     }
 
@@ -241,7 +161,6 @@ struct WindowsIntegration::Native {
             if (integration->nativeEventFilter(QByteArrayLiteral("windows_generic_MSG"), &native, &result)) return result;
         } else if (message == WM_NCDESTROY) {
             RemoveWindowSubclass(window, &Native::windowProcedure, identity);
-            integration->m_native->cleanupMediaControls();
             integration->m_native->handle = nullptr;
             integration->m_native->buttonsAdded = false;
             integration->m_native->readyWindows.remove(reinterpret_cast<quintptr>(window));
@@ -252,14 +171,7 @@ struct WindowsIntegration::Native {
 
 void WindowsIntegration::initializeProcess()
 {
-    SetCurrentProcessExplicitAppUserModelID(L"dev.addenator.Swiftify.Qt");
-    const HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
-    if ((err && err != INVALID_HANDLE_VALUE && GetFileType(err) != FILE_TYPE_UNKNOWN)
-        || AttachConsole(ATTACH_PARENT_PROCESS)) {
-        if (!qEnvironmentVariableIsSet("QT_FORCE_STDERR_LOGGING")) {
-            qputenv("QT_FORCE_STDERR_LOGGING", "1");
-        }
-    }
+    SetCurrentProcessExplicitAppUserModelID(L"dev.imalekzzz.Swifty");
 }
 
 void WindowsIntegration::setNativeTitleBar(QWindow *window, bool enabled)
@@ -302,14 +214,11 @@ WindowsIntegration::WindowsIntegration(PlaybackController *player, Theme *theme,
     qApp->installNativeEventFilter(this);
     connect(m_theme, &Theme::schemeChanged, this, &WindowsIntegration::styleWindow);
     connect(m_player, &PlaybackController::playingChanged, this, &WindowsIntegration::updateButtons);
-    connect(m_player, &PlaybackController::playingChanged, this, &WindowsIntegration::updateMediaControls);
     connect(m_player, &PlaybackController::queueChanged, this, &WindowsIntegration::updateButtons);
-    connect(m_player, &PlaybackController::queueChanged, this, &WindowsIntegration::updateMediaControls);
     connect(m_player, &PlaybackController::currentSongChanged, this, &WindowsIntegration::updateButtons);
+    connect(m_player, &PlaybackController::playingChanged, this, &WindowsIntegration::updateMediaControls);
+    connect(m_player, &PlaybackController::queueChanged, this, &WindowsIntegration::updateMediaControls);
     connect(m_player, &PlaybackController::currentSongChanged, this, &WindowsIntegration::updateMediaControls);
-    connect(m_player, &PlaybackController::currentSongChanged, this, &WindowsIntegration::updateMediaMetadata);
-    connect(m_player, &PlaybackController::mediaStateChanged, this, &WindowsIntegration::updateMediaControls);
-    connect(m_player, &PlaybackController::mediaStateChanged, this, &WindowsIntegration::updateMediaMetadata);
     connect(m_player, &PlaybackController::loadingChanged, this, &WindowsIntegration::updateProgress);
     connect(m_player, &PlaybackController::livePositionChanged, this, &WindowsIntegration::updateProgress);
     connect(m_player, &PlaybackController::durationChanged, this, &WindowsIntegration::updateProgress);
@@ -319,7 +228,6 @@ WindowsIntegration::~WindowsIntegration()
 {
     if (m_native) {
         qApp->removeNativeEventFilter(this);
-        m_native->cleanupMediaControls();
         if (m_window && m_native->taskbar) {
             m_native->taskbar->SetProgressState(reinterpret_cast<HWND>(m_window->winId()), TBPF_NOPROGRESS);
         }
@@ -337,7 +245,6 @@ void WindowsIntegration::setWindow(QWindow *window)
     }
     if (m_native->handle) {
         RemoveWindowSubclass(m_native->handle, &Native::windowProcedure, reinterpret_cast<UINT_PTR>(m_native.get()));
-        m_native->cleanupMediaControls();
         m_native->handle = nullptr;
     }
     m_window = window;
@@ -350,7 +257,6 @@ void WindowsIntegration::setWindow(QWindow *window)
         if (visible) {
             styleWindow();
             QTimer::singleShot(0, this, &WindowsIntegration::initializeTaskbar);
-            QTimer::singleShot(0, this, &WindowsIntegration::initializeMediaControls);
         }
     });
     if (auto *quick = qobject_cast<QQuickWindow *>(m_window.data())) {
@@ -358,7 +264,6 @@ void WindowsIntegration::setWindow(QWindow *window)
     }
     styleWindow();
     QTimer::singleShot(0, this, &WindowsIntegration::initializeTaskbar);
-    QTimer::singleShot(0, this, &WindowsIntegration::initializeMediaControls);
 }
 
 void WindowsIntegration::attachWindow()
@@ -384,7 +289,6 @@ bool WindowsIntegration::eventFilter(QObject *watched, QEvent *event)
         if (surface->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
             styleWindow();
             QTimer::singleShot(0, this, &WindowsIntegration::initializeTaskbar);
-            QTimer::singleShot(0, this, &WindowsIntegration::initializeMediaControls);
         }
     }
     return QObject::eventFilter(watched, event);
@@ -417,9 +321,65 @@ void WindowsIntegration::styleWindow()
     DwmSetWindowAttribute(handle, kTextColor, &text, sizeof(text));
 }
 
+void WindowsIntegration::initializeMediaControls()
+{
+#ifdef SWIFTY_HAS_SMTC
+    if (!m_window || !m_native || !m_window->isVisible()) return;
+    const HWND handle = reinterpret_cast<HWND>(m_window->winId());
+    // made once for a window, and again if the window is another one now
+    if (m_native->transport && m_native->transportWindow == handle) return;
+    m_native->transport = std::make_unique<MediaTransport>(handle, [this](MediaTransport::Button button) {
+        // the system calls from a thread of its own
+        QMetaObject::invokeMethod(this, [this, button] {
+            switch (button) {
+            case MediaTransport::Button::Play: if (!m_player->isPlaying()) m_player->togglePlayback(); break;
+            case MediaTransport::Button::Pause: if (m_player->isPlaying()) m_player->togglePlayback(); break;
+            case MediaTransport::Button::Stop: if (m_player->isPlaying()) m_player->togglePlayback(); break;
+            case MediaTransport::Button::Next: m_player->skipForward(); break;
+            case MediaTransport::Button::Previous: m_player->skipBackward(); break;
+            }
+        }, Qt::QueuedConnection);
+    });
+    m_native->transportWindow = handle;
+    m_native->transportTrack.clear();
+    updateMediaControls();
+#endif
+}
+
+void WindowsIntegration::updateMediaControls()
+{
+#ifdef SWIFTY_HAS_SMTC
+    if (!m_native || !m_native->transport || !m_native->transport->valid()) return;
+    MediaTransport &transport = *m_native->transport;
+    const bool hasSong = m_player->hasSong();
+    transport.setAvailable(hasSong, hasSong, hasSong && m_player->canSkipForward(), hasSong);
+    transport.setState(!hasSong ? MediaTransport::State::Closed
+                                : m_player->isPlaying() ? MediaTransport::State::Playing : MediaTransport::State::Paused);
+
+    // what is shown only changes with the song
+    const Song song = m_player->currentSong();
+    const QString key = hasSong ? song.uri + u'|' + song.name + u'|' + song.artworkUrl.toString() : QString();
+    if (key == m_native->transportTrack) return;
+    m_native->transportTrack = key;
+    MediaTransport::Track track;
+    if (hasSong) {
+        track.title = song.name.toStdWString();
+        track.artist = song.artists.toStdWString();
+        track.album = song.albumName.toStdWString();
+        // the system reads a cover from a file; one inside the app's own
+        // image provider it cannot reach
+        if (song.artworkUrl.isLocalFile()) {
+            track.artwork = song.artworkUrl.toString(QUrl::FullyEncoded).toStdWString();
+        }
+    }
+    transport.setTrack(track);
+#endif
+}
+
 void WindowsIntegration::initializeTaskbar()
 {
     if (!m_window || !m_native || !m_window->isVisible()) return;
+    initializeMediaControls();
     if (!m_native->readyWindows.contains(quintptr(m_window->winId()))) return;
     if (!m_native->taskbar) {
         if (FAILED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
@@ -462,7 +422,7 @@ void WindowsIntegration::updateButtons()
         m_native->taskbar->ThumbBarUpdateButtons(handle, UINT(buttons.size()), buttons.data());
     }
     const Song song = m_player->currentSong();
-    const QString tooltip = m_player->hasSong() ? song.name + QStringLiteral(" — ") + song.artists : QStringLiteral("Swiftify");
+    const QString tooltip = m_player->hasSong() ? song.name + QStringLiteral(" — ") + song.artists : QStringLiteral("Swifty");
     m_native->taskbar->SetThumbnailTooltip(handle, reinterpret_cast<LPCWSTR>(tooltip.utf16()));
     updateProgress();
 }
@@ -507,171 +467,10 @@ bool WindowsIntegration::nativeEventFilter(const QByteArray &eventType, void *me
         case kNext: m_player->skipForward(); break;
         default: return false;
         }
-        if (result) *result = 0;
+        *result = 0;
         return true;
     }
     return false;
 }
 
-#ifdef SWIFTIFY_HAVE_SMTC
-void WindowsIntegration::initializeMediaControls()
-{
-    if (!m_window || !m_native || !m_window->handle()) return;
-    const HWND handle = reinterpret_cast<HWND>(m_window->winId());
-    if (m_native->controls) return;
-
-    using namespace ABI::Windows::Media;
-    using namespace ABI::Windows::Foundation;
-    using Microsoft::WRL::ComPtr;
-    using Microsoft::WRL::Wrappers::HStringReference;
-
-    ComPtr<ISystemMediaTransportControlsInterop> interop;
-    HStringReference smtcId(RuntimeClass_Windows_Media_SystemMediaTransportControls);
-    if (FAILED(RoGetActivationFactory(smtcId.Get(), IID_PPV_ARGS(&interop))) || !interop) {
-        return;
-    }
-
-    if (FAILED(interop->GetForWindow(handle, IID_PPV_ARGS(&m_native->controls))) || !m_native->controls) {
-        return;
-    }
-
-    m_native->controls->put_IsEnabled(true);
-    m_native->controls->put_IsPlayEnabled(true);
-    m_native->controls->put_IsPauseEnabled(true);
-    m_native->controls->put_IsStopEnabled(true);
-    m_native->controls->put_IsNextEnabled(true);
-    m_native->controls->put_IsPreviousEnabled(true);
-
-    m_native->buttonToken.value = 0;
-    // the buttons are pressed on a thread of windows' own; the press is
-    // queued onto this one
-    ComPtr<ButtonPressedHandler> handler;
-    handler.Attach(new ButtonPressedCallback([this](SystemMediaTransportControlsButton button) {
-        QMetaObject::invokeMethod(this, [this, button] {
-            handleMediaButton(int(button));
-        }, Qt::QueuedConnection);
-    }));
-    m_native->controls->add_ButtonPressed(handler.Get(), &m_native->buttonToken);
-
-    updateMediaMetadata();
-    updateMediaControls();
-}
-
-void WindowsIntegration::handleMediaButton(int button)
-{
-    using namespace ABI::Windows::Media;
-    switch (button) {
-    case SystemMediaTransportControlsButton_Play:
-        m_player->resume();
-        break;
-    case SystemMediaTransportControlsButton_Pause:
-    case SystemMediaTransportControlsButton_Stop:
-        if (m_player->isPlaying() || m_player->isLoading()) {
-            m_player->pause();
-        }
-        break;
-    case SystemMediaTransportControlsButton_Next:
-        m_player->skipForward();
-        break;
-    case SystemMediaTransportControlsButton_Previous:
-        m_player->skipBackward();
-        break;
-    default:
-        break;
-    }
-}
-
-void WindowsIntegration::updateMediaControls()
-{
-    if (!m_native || !m_native->controls) return;
-    using namespace ABI::Windows::Media;
-    if (!m_player->hasSong()) {
-        m_native->controls->put_PlaybackStatus(MediaPlaybackStatus_Closed);
-        m_native->controls->put_IsPlayEnabled(false);
-        m_native->controls->put_IsPauseEnabled(false);
-        m_native->controls->put_IsNextEnabled(false);
-        m_native->controls->put_IsPreviousEnabled(false);
-    } else {
-        m_native->controls->put_PlaybackStatus(m_player->isPlaying() ? MediaPlaybackStatus_Playing : MediaPlaybackStatus_Paused);
-        m_native->controls->put_IsPlayEnabled(true);
-        m_native->controls->put_IsPauseEnabled(true);
-        m_native->controls->put_IsNextEnabled(m_player->canSkipForward());
-        m_native->controls->put_IsPreviousEnabled(m_player->canSkipBackward());
-    }
-}
-
-void WindowsIntegration::updateMediaMetadata()
-{
-    if (!m_native || !m_native->controls) return;
-    using namespace ABI::Windows::Media;
-    using namespace ABI::Windows::Foundation;
-    using namespace ABI::Windows::Storage::Streams;
-    using Microsoft::WRL::ComPtr;
-    using Microsoft::WRL::Wrappers::HString;
-    using Microsoft::WRL::Wrappers::HStringReference;
-
-    ComPtr<ISystemMediaTransportControlsDisplayUpdater> updater;
-    if (FAILED(m_native->controls->get_DisplayUpdater(&updater)) || !updater) {
-        return;
-    }
-
-    if (!m_player->hasSong()) {
-        updater->ClearAll();
-        updater->Update();
-        return;
-    }
-
-    const Song song = m_player->currentSong();
-    updater->put_Type(MediaPlaybackType_Music);
-
-    ComPtr<IMusicDisplayProperties> music;
-    if (SUCCEEDED(updater->get_MusicProperties(&music)) && music) {
-        HString title;
-        title.Set(reinterpret_cast<const wchar_t *>(song.name.utf16()), UINT32(song.name.length()));
-        music->put_Title(title.Get());
-
-        HString artist;
-        artist.Set(reinterpret_cast<const wchar_t *>(song.artists.utf16()), UINT32(song.artists.length()));
-        music->put_Artist(artist.Get());
-
-        // the album title came in the interface's second version
-        ComPtr<IMusicDisplayProperties2> music2;
-        if (!song.albumName.isEmpty() && SUCCEEDED(music.As(&music2)) && music2) {
-            HString album;
-            album.Set(reinterpret_cast<const wchar_t *>(song.albumName.utf16()), UINT32(song.albumName.length()));
-            music2->put_AlbumTitle(album.Get());
-        }
-    }
-
-    if (song.artworkUrl.isValid()) {
-        ComPtr<IUriRuntimeClassFactory> uriFactory;
-        HStringReference uriClassName(RuntimeClass_Windows_Foundation_Uri);
-        if (SUCCEEDED(RoGetActivationFactory(uriClassName.Get(), IID_PPV_ARGS(&uriFactory))) && uriFactory) {
-            const QString urlStr = song.artworkUrl.toString();
-            HString uriHStr;
-            uriHStr.Set(reinterpret_cast<const wchar_t *>(urlStr.utf16()), UINT32(urlStr.length()));
-            ComPtr<IUriRuntimeClass> uri;
-            if (SUCCEEDED(uriFactory->CreateUri(uriHStr.Get(), &uri)) && uri) {
-                ComPtr<IRandomAccessStreamReferenceStatics> streamStatics;
-                HStringReference streamClassName(RuntimeClass_Windows_Storage_Streams_RandomAccessStreamReference);
-                if (SUCCEEDED(RoGetActivationFactory(streamClassName.Get(), IID_PPV_ARGS(&streamStatics))) && streamStatics) {
-                    ComPtr<IRandomAccessStreamReference> thumbnail;
-                    if (SUCCEEDED(streamStatics->CreateFromUri(uri.Get(), &thumbnail)) && thumbnail) {
-                        updater->put_Thumbnail(thumbnail.Get());
-                    }
-                }
-            }
-        }
-    }
-
-    updater->Update();
-}
-#else
-// built without the media controls: the headers had no declarations for them
-void WindowsIntegration::initializeMediaControls() {}
-void WindowsIntegration::handleMediaButton(int) {}
-void WindowsIntegration::updateMediaControls() {}
-void WindowsIntegration::updateMediaMetadata() {}
-#endif
-
-} // namespace swiftify
+} // namespace swifty
