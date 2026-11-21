@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,35 +20,29 @@
 #include "app/AppController.h"
 #include "app/ErrorCenter.h"
 #include "app/Fonts.h"
-#include "app/Logging.h"
 #include "app/Paths.h"
 #include "app/Settings.h"
-#include "system/DiscordPresence.h"
-#include "app/Translations.h"
 #include "artwork/ArtworkCache.h"
 #include "audio/AudioShaping.h"
 #include "core/RustCore.h"
 #include "library/LibraryStore.h"
 #include "library/LocalLibrary.h"
 #include "motion/ScrollMomentum.h"
+#include "playback/SessionStore.h"
+#include "library/ArtistImages.h"
+#include "playback/LyricsFetcher.h"
 #include "playback/PlaybackController.h"
 #include "render/SpectrumSource.h"
-#include "stats/PlayHistory.h"
-#include "stats/StatsStore.h"
-#include "spotify/CredentialStore.h"
-#include "spotify/SpotifySession.h"
+#include "system/DiscordPresence.h"
 #include "system/SingleInstance.h"
 #include "theme/PlayerStyle.h"
 #include "theme/Theme.h"
 
-#ifdef SWIFTIFY_HAS_SOLOIST
-#include "soloist/SoloistCore.h"
-#endif
-#if defined(SWIFTIFY_HAS_DBUS) && defined(Q_OS_LINUX)
+#ifdef SWIFTY_HAS_DBUS
 #include "system/dbus/Mpris.h"
 #include "system/dbus/SleepMonitor.h"
 #endif
-#if defined(SWIFTIFY_DESKTOP_INTEGRATION) && defined(SWIFTIFY_HAS_DBUS) && defined(Q_OS_LINUX)
+#ifdef SWIFTY_DESKTOP_INTEGRATION
 #include "system/linux/AudioDeviceMonitor.h"
 #endif
 #ifdef Q_OS_MACOS
@@ -73,6 +68,9 @@
 #include <QQuickStyle>
 #include <QSocketNotifier>
 #include <QtQml/qqmlextensionplugin.h>
+#include <QFileOpenEvent>
+#include <functional>
+#include <utility>
 
 #ifdef Q_OS_UNIX
 #include <csignal>
@@ -89,9 +87,9 @@
 #include <cstdlib>
 #endif
 
-Q_IMPORT_QML_PLUGIN(SwiftifyPlugin)
+Q_IMPORT_QML_PLUGIN(SwiftyPlugin)
 
-using namespace swiftify;
+using namespace swifty;
 
 namespace {
 
@@ -105,8 +103,8 @@ void forwardQuitSignal(int)
 }
 
 /// a terminate (a kill, the session ending) quits as the menu does, rather
-/// than stopping dead: what is still being kept gets written first, a spotify
-/// login just rotated above all. a second one stops it at once
+/// than stopping dead: what is still being kept gets written first. a second
+/// one stops it at once
 void quitGracefullyOnSignals(QCoreApplication &application)
 {
     if (::socketpair(AF_UNIX, SOCK_STREAM, 0, s_quitSignals) != 0) {
@@ -185,6 +183,45 @@ void startCompact(char *argv[])
     // it could not start over; it carries on as it is
 }
 
+#ifdef Q_OS_MACOS
+/// macos hands a swifty: link to the app as an event, not as an argument. one that comes
+/// before the app is set up waits for it
+class LinkOpener : public QObject {
+public:
+    using QObject::QObject;
+
+    void ready(std::function<void(const QString &)> handle)
+    {
+        m_handle = std::move(handle);
+        if (!m_pending.isEmpty()) {
+            m_handle(std::exchange(m_pending, QString()));
+        }
+    }
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (event->type() != QEvent::FileOpen) {
+            return false;
+        }
+        const QString command = SingleInstance::commandFromLink(static_cast<QFileOpenEvent *>(event)->url());
+        if (command.isEmpty()) {
+            return false;
+        }
+        if (m_handle) {
+            m_handle(command);
+        } else {
+            m_pending = command;
+        }
+        return true;
+    }
+
+private:
+    std::function<void(const QString &)> m_handle;
+    QString m_pending;
+};
+#endif
+
 /// every window's metal layer keeps two drawables, and its view reports a
 /// colour space that keeps its profile at hand (MacWindow.h). set as its
 /// surface is made, and again when it is first shown, as the layer and the
@@ -222,44 +259,21 @@ private:
 };
 #endif
 
-#ifdef Q_OS_LINUX
-/// alsa audio streams routing through pipewire or pulseaudio default to generic
-/// labels like "PipeWire ALSA [swiftify]" or "PulseAudio ALSA [swiftify]".
-/// these variables tell their alsa plugins to present the stream as Swiftify
-/// with its application icon and music media role in pavucontrol and mixers
-void setupAudioEnvironment()
-{
-    if (!qEnvironmentVariableIsSet("PIPEWIRE_ALSA")) {
-        qputenv("PIPEWIRE_ALSA",
-                "{ application.name=\"Swiftify\" application.icon-name=\"swiftify\" node.name=\"Swiftify\" "
-                "node.description=\"Swiftify\" media.name=\"Playback\" media.role=\"music\" }");
-    }
-    if (!qEnvironmentVariableIsSet("PULSE_PROP")) {
-        qputenv("PULSE_PROP", "application.name=Swiftify application.icon_name=swiftify media.role=music");
-    }
-}
-#endif
-
-
 } // namespace
 
 int main(int argc, char *argv[])
 {
-#ifdef Q_OS_MACOS
-    startCompact(argv);
-#endif
 #ifdef Q_OS_WIN
     WindowsIntegration::initializeProcess();
 #endif
-    logging::setupLogging();
-#ifdef Q_OS_LINUX
-    setupAudioEnvironment();
+#ifdef Q_OS_MACOS
+    startCompact(argv);
 #endif
     tuneSceneGraph();
-    QGuiApplication::setApplicationName(QStringLiteral("Swiftify"));
-    QGuiApplication::setApplicationVersion(QStringLiteral(SWIFTIFY_VERSION));
+    QGuiApplication::setApplicationName(QStringLiteral("Swifty"));
+    QGuiApplication::setApplicationVersion(QStringLiteral(SWIFTY_VERSION));
     // the wayland app id, which hyprland window rules and the .desktop file match.
-    QGuiApplication::setDesktopFileName(QStringLiteral("swiftify"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("swifty"));
     // the tray menu can fall back to widgets on linux
 #if defined(Q_OS_LINUX) || defined(Q_OS_WIN)
     QApplication application(argc, argv);
@@ -274,7 +288,7 @@ int main(int argc, char *argv[])
 #endif
 #ifndef Q_OS_MACOS
     // x11 shows this; wayland goes by the desktop entry, macos by the bundle
-    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/Swiftify/resources/swiftify-icon.png")));
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/Swifty/resources/swifty-icon.png")));
 #endif
 
     SingleInstance instance;
@@ -284,72 +298,60 @@ int main(int argc, char *argv[])
 #ifdef Q_OS_MACOS
     WindowTuner windowTuner;
     application.installEventFilter(&windowTuner);
+    LinkOpener linkOpener;
+    application.installEventFilter(&linkOpener);
 #endif
 #ifdef Q_OS_LINUX
     // a trackpad swipe glides on after the fingers lift, as macos does itself
+    // SWIFTY_NO_SCROLL_MOMENTUM=1 turns it off, to tell it from other scroll problems
     ScrollMomentum scrollMomentum;
-    application.installEventFilter(&scrollMomentum);
+    if (!qEnvironmentVariableIsSet("SWIFTY_NO_SCROLL_MOMENTUM")) {
+        application.installEventFilter(&scrollMomentum);
+    }
 #endif
 
-    // the plain style: every control swiftify shows is drawn by its own components.
+    // the plain style: every control swifty shows is drawn by its own components.
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     fonts::loadIconFont();
     fonts::loadInterfaceFont();
 
-    ErrorCenter errors(nullptr);
     Settings settings(nullptr);
-    Translations translations(&settings);
     Theme theme(&settings);
+    ErrorCenter errors(nullptr);
     QNetworkAccessManager network;
-    RustCore rustCore;
-#ifdef SWIFTIFY_HAS_SOLOIST
-    // spotify's songs through soloist when it is installed and has a key, with
-    // the rust core keeping the login, lyrics and local files
-    std::unique_ptr<SoloistCore> soloistCore;
-    if (auto soloist = SoloistCore::detect()) {
-        soloistCore = std::make_unique<SoloistCore>(&rustCore, std::move(*soloist));
-    }
-    PlaybackCore &core = soloistCore ? static_cast<PlaybackCore &>(*soloistCore) : rustCore;
-#else
-    PlaybackCore &core = rustCore;
-#endif
-    // what playback connects with: the streaming quality, and how much of
-    // what it streams is kept so a song played again needs no download
-    const auto applyStreaming = [&] {
-        core.setStreamQuality(settings.streamingQuality());
-        core.setVolumeNormalization(settings.normalizeVolume());
-        core.setAudioCache(paths::cacheDirectory() + QStringLiteral("/songs"),
-                           qint64(settings.songCacheMegabytes()) * 1000 * 1000);
-    };
-    applyStreaming();
-    QObject::connect(&settings, &Settings::streamingQualityChanged, &core, applyStreaming);
-    QObject::connect(&settings, &Settings::normalizeVolumeChanged, &core, applyStreaming);
-    QObject::connect(&settings, &Settings::songCacheMegabytesChanged, &core, applyStreaming);
-    KeychainCredentialStore credentials;
-    SpotifySession session(&core, &credentials, &network, &errors);
-    PlaybackController player(&core, &session, &settings, &errors);
-    DiscordPresence discord(&player, &settings);
-    LibraryStore library(&session, &settings, &errors);
+    RustCore core;
+    // outlives the player, whose lookups may still be waiting on it at exit
+    LyricsFetcher lyricsFetcher;
+    PlaybackController player(&core, &settings, &errors);
+    player.setLyricsFetcher(&lyricsFetcher);
+    // outlives the library, which asks it for pictures
+    ArtistImages artistImages(&settings);
+    LibraryStore library(&settings, &errors);
+    library.setArtistImages(&artistImages);
     library.attachPlayer(&player);
-    AudioShaping sound(&core, &settings, &session);
+    AudioShaping sound(&core, &settings);
     LocalLibrary localFiles(&settings);
     library.attachLocalFiles(&localFiles);
     // a song whose tags were edited shows as it is now wherever it is queued
     QObject::connect(&localFiles, &LocalLibrary::scanned, &player,
                      [&] { player.refreshSongDetails(localFiles.allSongs()); });
+    // what was playing comes back where it was left, paused
+    SessionStore session(&settings, &player, [&localFiles] { return localFiles.allSongs(); });
+    session.restore();
+    QObject::connect(&localFiles, &LocalLibrary::scanned, &session, &SessionStore::restoreIfPending);
     AppController app(nullptr);
     ArtworkCache artwork(&network);
     PlayerStyle playerStyle(&player, &theme, &artwork);
     SpectrumSource spectrum(&core, &player);
-    PlayHistory listeningHistory(PlayHistory::defaultPath());
-    PlayTracker listeningTracker(&player, &listeningHistory);
-    StatsStore stats(&settings, &session, &network, &listeningHistory, &listeningTracker);
+    DiscordPresence discord(&player, &settings);
 
     QObject::connect(&instance, &SingleInstance::commandReceived, &app, &AppController::handleCommand);
     instance.listen();
+#ifdef Q_OS_MACOS
+    linkOpener.ready([&app](const QString &command) { app.handleCommand(command); });
+#endif
 
-// qt finds d-bus on macos too, but mpris and logind only exist on linux
-#if defined(SWIFTIFY_HAS_DBUS) && defined(Q_OS_LINUX)
+#ifdef SWIFTY_HAS_DBUS
     Mpris mpris(&player);
     QObject::connect(&mpris, &Mpris::raiseRequested, &app, &AppController::raiseRequested);
     QObject::connect(&mpris, &Mpris::quitRequested, &app, &AppController::quit);
@@ -359,14 +361,14 @@ int main(int argc, char *argv[])
     // the media keys, headphone buttons and control centre's now playing
     NowPlaying nowPlaying(&player, &artwork);
 #endif
-#if defined(SWIFTIFY_DESKTOP_INTEGRATION) && defined(SWIFTIFY_HAS_DBUS) && defined(Q_OS_LINUX)
+#ifdef SWIFTY_DESKTOP_INTEGRATION
     AudioDeviceMonitor devices;
     QObject::connect(&devices, &AudioDeviceMonitor::outputLost, &player, &PlaybackController::invalidateAudioOutput);
     QObject::connect(&devices, &AudioDeviceMonitor::outputArrived, &mpris, &Mpris::noteOutputArrived);
+    QObject::connect(&devices, &AudioDeviceMonitor::defaultOutputChanged, &player, &PlaybackController::refreshAudioOutput);
 #endif
 
     QQmlApplicationEngine engine;
-    QObject::connect(&translations, &Translations::languageChanged, &engine, &QQmlEngine::retranslate);
 #ifdef Q_OS_WIN
     WindowsIntegration windowsIntegration(&player, &theme);
     engine.setInitialProperties({{QStringLiteral("visible"), false}});
@@ -381,12 +383,11 @@ int main(int argc, char *argv[])
     engine.addImageProvider(QStringLiteral("art"), new ArtworkImageProvider);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &application,
                      [] { QCoreApplication::exit(EXIT_FAILURE); }, Qt::QueuedConnection);
-    engine.loadFromModule("Swiftify", "Main");
+    engine.loadFromModule("Swifty", "Main");
     // the first launch carries out its own command too, once the window exists
     if (const QString command = SingleInstance::commandFrom(QCoreApplication::arguments()); command != QLatin1StringView("raise")) {
         app.handleCommand(command);
     }
 
-    session.restoreSavedSessions();
     return application.exec();
 }
