@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +24,7 @@
 
 #include <algorithm>
 
-namespace swiftify {
+namespace swifty {
 
 /// how a visualizer lays out and moves its bars (SpectrumLayerStyle)
 struct SpectrumStyle {
@@ -100,16 +101,6 @@ struct SpectrumStyle {
         return style;
     }
 
-    /// the immersive band as one row, bass on the left
-    static SpectrumStyle continuous()
-    {
-        SpectrumStyle style = immersive();
-        style.layout = Layout::Ascending;
-        style.count = 48;
-        style.symmetricGradient = false;
-        return style;
-    }
-
     static SpectrumStyle equalizer()
     {
         // The palette follows PlayerStyle: the cover's extracted colours, or
@@ -137,4 +128,4 @@ struct SpectrumStyle {
 
 };
 
-} // namespace swiftify
+} // namespace swifty

@@ -32,7 +32,7 @@ namespace material_color_utilities {
 struct DynamicScheme;
 }
 
-namespace swiftify {
+namespace swifty {
 
 /// one material 3 colour scheme: the 49 roles material defines, plus the
 /// layer, hover and pressed colours end4 derives from them. the app chrome, the
@@ -369,4 +369,4 @@ private:
     bool m_dark = true;
 };
 
-} // namespace swiftify
+} // namespace swifty

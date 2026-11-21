@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the sleep timer (SleepTimerPanel): hours and minutes to pick, then a
 // countdown in their place while it runs, how the music fades, and the button
@@ -30,9 +31,9 @@ Item {
     readonly property color secondaryText: Qt.rgba(1, 1, 1, 0.6)
     readonly property list<string> fades: ["none", "finalSeconds", "entire"]
     readonly property list<string> explanations: [
-        qsTr("track just stops when the timer runs out"),
-        qsTr("track fades out at the last 10 seconds"),
-        qsTr("track steadily fades out along with the timers whole duration, volume cant be adjusted during this time...")
+        "track just stops when the timer runs out",
+        "track fades out at the last 10 seconds",
+        "track steadily fades out along with the timers whole duration, volume cant be adjusted during this time..."
     ]
     readonly property int fadeIndex: Math.max(0, fades.indexOf(Settings.sleepTimerFade))
 
@@ -165,20 +166,20 @@ Item {
                 Stepper {
                     value: root.hours
                     maximum: 12
-                    unit: qsTr("h")
+                    unit: "h"
                     onStepped: (value) => root.hours = value
                 }
                 Stepper {
                     value: root.minutes
                     maximum: 59
-                    unit: qsTr("min")
+                    unit: "min"
                     onStepped: (value) => root.minutes = value
                 }
                 Stepper {
                     visible: Settings.debuggingEnabled
                     value: root.seconds
                     maximum: 59
-                    unit: qsTr("s")
+                    unit: "s"
                     onStepped: (value) => root.seconds = value
                 }
             }
@@ -227,7 +228,7 @@ Item {
                     }
                     StyledText {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: qsTr("until playback stops")
+                        text: "until playback stops"
                         color: root.secondaryText
                     }
                 }
@@ -236,7 +237,6 @@ Item {
 
         SegmentedControl {
             id: fadePicker
-            objectName: "sleepTimerFadePicker"
             width: parent.width
             segmentWidth: (width - 2 * inset) / 3
             scheme: root.scheme
@@ -248,9 +248,9 @@ Item {
             enabled: !Player.sleepTimerRunning
             opacity: enabled ? 1 : 0.38
             segments: [
-                Segment { text: qsTr("None") },
-                Segment { text: qsTr("Last 10 Seconds") },
-                Segment { text: qsTr("Whole Timer") }
+                Segment { text: "None" },
+                Segment { text: "Last 10 Seconds" },
+                Segment { text: "Whole Timer" }
             ]
             onActivated: (index) => Settings.sleepTimerFade = root.fades[index]
         }
@@ -263,7 +263,7 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 scheme: root.scheme
                 symbol: Player.sleepTimerRunning ? "close" : "bedtime"
-                text: Player.sleepTimerRunning ? qsTr("Cancel Timer") : qsTr("Start Timer")
+                text: Player.sleepTimerRunning ? "Cancel Timer" : "Start Timer"
                 colBackground: Qt.rgba(1, 1, 1, 0.14)
                 colBackgroundHover: Qt.rgba(1, 1, 1, 0.2)
                 colRipple: Qt.rgba(1, 1, 1, 0.24)

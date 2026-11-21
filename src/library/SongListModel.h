@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,14 +19,14 @@
 
 #pragma once
 
-#include "spotify/SpotifyTypes.h"
+#include "core/MusicTypes.h"
 
 #include <QAbstractListModel>
 #include <QtQml/qqmlregistration.h>
 
 #include <functional>
 
-namespace swiftify {
+namespace swifty {
 
 /// songs for a list view. holds plain c++ songs, so a playlist of thousands
 /// costs a vector and the view only builds the rows it shows.
@@ -71,7 +72,7 @@ public:
     void removeAll(const std::function<bool(const Song &)> &predicate);
     void append(const Song &song);
 
-    Q_INVOKABLE swiftify::Song at(int row) const;
+    Q_INVOKABLE swifty::Song at(int row) const;
     Q_INVOKABLE int indexOfInstance(quint64 instanceId) const;
 
 signals:
@@ -83,4 +84,4 @@ private:
     QList<Song> m_songs;
 };
 
-} // namespace swiftify
+} // namespace swifty

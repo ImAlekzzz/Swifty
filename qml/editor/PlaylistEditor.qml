@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +20,12 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Dialogs
-import Swiftify
+import Swifty
 
 // a new playlist, or the open one's details (PlaylistEditorSheet): a cover
 // from the carousel, either a photo framed in the cropper or one of ten
 // designs drawn from the playlist's own colours, then the name, the
-// description and whether it is public. nothing reaches spotify until Save.
+// description. nothing is kept until Save.
 // a playlist of music files on this computer (local) is kept here instead,
 // and is nobody's to see but the person's: it has no public switch.
 StyledDialog {
@@ -47,30 +48,29 @@ StyledDialog {
 
     function openForCreate() {
         creating = true
-        local = false
+        local = true
         firstSong = null
-        reset("", "", false)
+        reset("", "")
     }
 
     function openForCreateLocal(first: var) {
         creating = true
         local = true
         firstSong = first
-        reset("", "", false)
+        reset("", "")
     }
 
     function openForEdit(target: playlist) {
         creating = false
-        local = target.isLocal
+        local = true
         firstSong = null
         playlist = target
-        reset(target.name, target.description, target.isPublic)
+        reset(target.name, target.description)
     }
 
-    function reset(name: string, description: string, isPublic: bool) {
+    function reset(name: string, description: string) {
         nameField.text = name
         descriptionField.text = description
-        publicSwitch.checked = isPublic
         selectedDesign = -1
         pickedCover = null
         saving = false
@@ -92,14 +92,10 @@ StyledDialog {
             cover = pickedCover
         }
         saving = true
-        if (local) {
-            Library.saveLocalPlaylist(creating, nameField.text.trim(), descriptionField.text, cover, firstSong)
-        } else {
-            Library.savePlaylist(creating, nameField.text.trim(), descriptionField.text, publicSwitch.checked, cover)
-        }
+        Library.saveLocalPlaylist(creating, nameField.text.trim(), descriptionField.text, cover, firstSong)
     }
 
-    headline: creating ? qsTr("New Playlist") : qsTr("Edit Playlist")
+    headline: creating ? "New Playlist" : "Edit Playlist"
 symbol: "queue_music"
 iconShape: "bun"
     preferredWidth: 440
@@ -129,15 +125,15 @@ iconShape: "bun"
 
     FileDialog {
         id: picker
-        title: qsTr("Choose a Cover Photo")
-        nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.webp *.gif *.bmp *.tif *.tiff *.avif *.heic)")]
+        title: "Choose a Cover Photo"
+        nameFilters: ["Images (*.png *.jpg *.jpeg *.webp *.gif *.bmp *.tif *.tiff *.avif *.heic)"]
         onAccepted: {
             maker.photo = selectedFile
             if (maker.photoValid) {
                 root.problem = ""
                 cropper.begin()
             } else {
-                root.problem = qsTr("That image could not be used as a cover.")
+                root.problem = "That image could not be used as a cover."
             }
         }
     }
@@ -161,7 +157,6 @@ iconShape: "bun"
         padding: 0
         buttonRadius: 10
         colBackground: "transparent"
-        focusPolicy: Qt.NoFocus
 
         // drawn inside the tile, so nothing hangs past the carousel's clip
         Rectangle {
@@ -195,7 +190,7 @@ iconShape: "bun"
             required property int index
 
             selected: index === 0 ? root.pickedCover !== null && root.selectedDesign < 0 : root.selectedDesign === index - 1
-            tooltip: index === 0 ? qsTr("Choose a photo for the cover") : ""
+            tooltip: index === 0 ? "Choose a photo for the cover" : ""
             onClicked: {
                 if (index === 0) {
                     picker.open()
@@ -224,7 +219,7 @@ iconShape: "bun"
                         }
                         StyledText {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: qsTr("Photo")
+                            text: "Photo"
                             font.pixelSize: Appearance.fontSize.smaller
                             color: Appearance.colors.onSurfaceVariant
                         }
@@ -287,46 +282,29 @@ iconShape: "bun"
     OutlinedTextField {
         id: nameField
         width: parent.width
-        placeholder: qsTr("Name")
+        placeholder: "Name"
         onAccepted: root.save()
     }
 
     OutlinedTextField {
         id: descriptionField
         width: parent.width
-        placeholder: qsTr("Description")
+        placeholder: "Description"
         minimumLines: 3
         maximumLines: 6
-    }
-
-    Item {
-        width: parent.width
-        height: 36
-        visible: !root.local
-
-        StyledText {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("Public playlist")
-        }
-        StyledSwitch {
-            id: publicSwitch
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-        }
     }
 
     buttons: [
         TextButton {
             id: saveButton
-            text: qsTr("Save")
+            text: "Save"
             busy: root.saving
             enabled: !root.nameIsEmpty && !root.saving
             onClicked: root.save()
         },
         TextButton {
             variant: TextButton.Text
-            text: qsTr("Cancel")
+            text: "Cancel"
             onClicked: root.close()
         }
     ]

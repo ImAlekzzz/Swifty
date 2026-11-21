@@ -12,6 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Modified by ImAlekz, 2026, for Swifty.
  */
 
 #ifndef CPP_CAM_VIEWING_CONDITIONS_H_
@@ -46,7 +48,7 @@ ViewingConditions CreateViewingConditions(const double white_point[3],
 
 ViewingConditions DefaultWithBackgroundLstar(const double background_lstar);
 
-static const ViewingConditions kDefaultViewingConditions = {
+static const ViewingConditions kDefaultViewingConditions = (ViewingConditions){
     11.725676537,
     50.000000000,
     2.000000000,

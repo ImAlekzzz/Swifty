@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Effects
-import Swiftify
+import Swifty
 
 // the immersive player's left side (FullscreenNowPlaying): the cover with its
 // glow, inside the ring visualizer when that is on, then the song, the seek
@@ -33,12 +34,10 @@ Item {
     /// the panel is coming or going, so sizes ease rather than jump
     property bool animateLayout: false
     property MaterialScheme scheme: PlayerStyle.darkScheme
-    property real controlsOpacity: 1
-    readonly property real controlsShift: compactHorizontal ? 0 : Math.round((transport.implicitHeight + volume.implicitHeight + details.spacing * 2) / 2)
 
-    readonly property bool showsRing: Settings.visualizersEnabled && Settings.immersiveVisualizer && Settings.circularVisualizer
+    readonly property bool showsRing: Settings.visualizersEnabled && Settings.circularVisualizer
     /// round inside the ring, or round on its own with visualizers off
-    readonly property bool roundCover: showsRing || ((!Settings.visualizersEnabled || !Settings.immersiveVisualizer) && Settings.roundArtwork)
+    readonly property bool roundCover: showsRing || (!Settings.visualizersEnabled && Settings.roundArtwork)
     readonly property bool compactHorizontal: layout.contentHeight < 460
     property real artworkSize: compactHorizontal ? Math.min(240, Math.max(0, layout.contentHeight - 16), width * 0.36)
                                                  : layout.artworkSize
@@ -167,7 +166,7 @@ Item {
                 kind: SpectrumView.Ring
                 wave: Settings.visualizerShape === "wave"
                 sensitivity: Settings.visualizerSensitivity
-                active: Player.playing && root.showsRing
+                active: Player.playing
                 // the bars rise from under the cover and are cut along its
                 // squiggle line, so they start where the line is
                 cutWaves: cover.showsSquiggle ? cover.squiggleWaves : 0
@@ -228,44 +227,48 @@ Item {
                     shadowVerticalOffset: 0
                 }
 
-                ScrollingText {
-                    objectName: "immersiveTitle"
+                TitleText {
                     width: parent.width
                     height: root.compactHorizontal ? 52 : root.layout.titleHeight
                     text: root.shownSong.name
                     horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
                     font.pixelSize: root.compactHorizontal ? 24 : root.layout.titleFontSize
                     font.weight: Font.Bold
                     color: "white"
-                    rounded: true
                     animateChange: !metadataFade.running
                 }
 
-                Item {
-                    id: artistLine
+                Row {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: parent.width
-                    implicitHeight: Math.max(artistText.implicitHeight, more.height, 28)
+                    spacing: 5
 
-                    ScrollingText {
-                        id: artistText
-                        objectName: "immersiveArtist"
-                        anchors.horizontalCenter: parent.horizontalCenter
+                    StyledText {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: Math.min(implicitWidth + 1, parent.width - (more.width + 6) * 2)
+                        width: Math.min(implicitWidth, metadata.width - more.width - favourite.width - 10)
                         text: root.shownSong.artists
-                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
                         font.pixelSize: Appearance.fontSize.larger
                         font.weight: Font.Medium
                         color: Qt.rgba(1, 1, 1, 0.62)
-                        animateChange: !metadataFade.running
                     }
-
+                    IconButton {
+                        id: favourite
+                        anchors.verticalCenter: parent.verticalCenter
+                        scheme: root.scheme
+                        symbol: "star"
+                        toggled: Library.savedRevision >= 0 && Library.isSaved(Player.currentSong.uri)
+                        size: 28
+                        iconSize: 20
+                        iconColor: toggled ? "white" : Qt.rgba(1, 1, 1, 0.62)
+                        colBackgroundHover: Qt.rgba(1, 1, 1, 0.1)
+                        tooltip: toggled ? "Remove from Favourites" : "Add to Favourites"
+                        onClicked: Library.toggleSaved(Player.currentSong)
+                    }
                     IconButton {
                         id: more
-                        objectName: "immersiveMoreButton"
-                        anchors.left: artistText.right
-                        anchors.leftMargin: 4
                         anchors.verticalCenter: parent.verticalCenter
                         scheme: root.scheme
                         symbol: "more_horiz"
@@ -273,21 +276,19 @@ Item {
                         iconSize: 20
                         iconColor: Qt.rgba(1, 1, 1, 0.62)
                         colBackgroundHover: Qt.rgba(1, 1, 1, 0.1)
-                        tooltip: qsTr("More")
+                        tooltip: "More"
                         onClicked: SongMenus.open(Player.currentSong, false)
-                        opacity: root.controlsOpacity
-                        enabled: root.controlsOpacity > 0
                     }
                 }
 
-                ScrollingText {
+                StyledText {
                     width: parent.width
                     visible: root.shownSong.albumName.length > 0
                     text: root.shownSong.albumName
                     horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
                     font.pixelSize: Appearance.fontSize.smallie
                     color: Qt.rgba(1, 1, 1, 0.4)
-                    animateChange: !metadataFade.running
                 }
             }
 
@@ -334,8 +335,6 @@ Item {
                 objectName: "immersiveTransport"
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: root.compactHorizontal ? Math.max(8, Math.min(28, (details.width - 196) / 4)) : 28
-                opacity: root.controlsOpacity
-                enabled: root.controlsOpacity > 0
 
 
                 Control {
@@ -344,7 +343,7 @@ Item {
                     toggledShape: "clover4"
                     toggled: Player.shuffle
                     enabled: Player.hasSong
-                    tooltip: qsTr("Shuffle")
+                    tooltip: "Shuffle"
                     onClicked: Player.toggleShuffle()
                 }
                 Control {
@@ -355,7 +354,7 @@ Item {
                     iconSize: 30
                     alwaysFilled: true
                     enabled: Player.canSkipBackward
-                    tooltip: qsTr("Previous song")
+                    tooltip: "Previous song"
                     onClicked: Player.skipBackward()
                 }
 
@@ -392,7 +391,7 @@ Item {
                     iconSize: 30
                     alwaysFilled: true
                     enabled: Player.canSkipForward
-                    tooltip: qsTr("Next song")
+                    tooltip: "Next song"
                     onClicked: Player.skipForward()
                 }
                 Control {
@@ -401,7 +400,7 @@ Item {
                     toggledShape: Player.repeatMode === Player.RepeatMode.One ? "cookie4" : "cookie6"
                     toggled: Player.repeatMode !== Player.RepeatMode.Off
                     enabled: Player.hasSong
-                    tooltip: Player.repeatMode === Player.RepeatMode.One ? qsTr("Repeat song") : (Player.repeatMode === Player.RepeatMode.All ? qsTr("Repeat queue") : qsTr("Repeat off"))
+                    tooltip: Player.repeatMode === Player.RepeatMode.One ? "Repeat song" : (Player.repeatMode === Player.RepeatMode.All ? "Repeat queue" : "Repeat off")
                     onClicked: Player.cycleRepeatMode()
                 }
             }
@@ -410,13 +409,9 @@ Item {
             Row {
                 id: volume
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.horizontalCenterOffset: -muteButton.width / 2
                 spacing: 10
-                opacity: root.controlsOpacity
-                enabled: root.controlsOpacity > 0
 
                 IconButton {
-                    id: muteButton
                     anchors.verticalCenter: parent.verticalCenter
                     scheme: root.scheme
                     symbol: Player.volume <= 0.01 ? "volume_off" : (Player.volume <= 0.5 ? "volume_down" : "volume_up")
@@ -424,12 +419,12 @@ Item {
                     iconSize: 20
                     iconColor: Qt.rgba(1, 1, 1, 0.78)
                     colBackgroundHover: Qt.rgba(1, 1, 1, 0.1)
-                    tooltip: Player.volume <= 0.01 ? qsTr("Unmute") : qsTr("Mute")
+                    tooltip: Player.volume <= 0.01 ? "Unmute" : "Mute"
                     onClicked: Player.toggleMute()
                 }
                 StyledSlider {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.max(0, Math.min(Math.max(0, progress.width - 40), 300) - muteButton.width)
+                    width: Math.min(Math.max(0, progress.width - 40), 300)
                     scheme: root.scheme
                     trackThickness: 8
                     handleLength: 20

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the head of a playlist, album, artist or favourites page: glowing artwork
 // on a soft burst in its own colour, beside a kind chip, the title, a
@@ -30,7 +31,6 @@ Item {
     property bool circular: false
     property string kind
     property string title
-    property string fallbackKey: title
     property string description
     property string facts
     property real titleSize: 34
@@ -97,7 +97,6 @@ Item {
             visible: artworkSlot.children.length === 0
             opacity: artworkBox.awaitingFlight ? 0 : 1
             source: root.artworkUrl
-            fallbackKey: root.fallbackKey
             circular: root.circular
         }
 
@@ -139,7 +138,7 @@ Item {
                 }
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTranslate("CollectionKind", root.kind)
+                    text: root.kind
                     font.pixelSize: Appearance.fontSize.smallest
                     font.weight: Font.Bold
                     font.letterSpacing: 0.8

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,22 +19,21 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // Favourite Songs (SavedSongsView)
 SongListPage {
     id: root
 
-    songs: Library.savedSongs
-    loading: Library.loadingSavedSongs && Library.savedSongs.count === 0
-    showsEmpty: Library.savedSongs.count === 0
-    emptySymbol: "star"
-    emptyTitle: qsTr("No Saved Songs")
-    emptyDescription: qsTr("Save tracks from Search or a playlist.")
+    songs: Library.displayedSavedSongs
+    showsEmpty: Library.savedSongs.count === 0 || Library.displayedSavedSongs.count === 0
+    emptySymbol: Library.savedSongs.count === 0 ? "star" : "search_off"
+    emptyTitle: Library.savedSongs.count > 0 ? "No Results for “" + Library.playlistFilterQuery.trim() + "”" : "No Favourites Yet"
+    emptyDescription: Library.savedSongs.count > 0 ? "Check the spelling or try a new search." : "Tap the star on a song to add it here."
 
     hero: CollectionHero {
         kind: "PLAYLIST"
-        title: qsTr("Favourite Songs")
+        title: "Favourite Songs"
         facts: Format.joined([Format.songCount(Library.savedSongs.count), Format.totalDuration(Library.savedSongs.totalDurationMs)], "  •  ")
 
         artwork: Rectangle {
@@ -68,7 +68,7 @@ SongListPage {
                 wavy: true
                 symbol: "play_arrow"
                 burst: "play"
-                text: qsTr("Play")
+                text: "Play"
                 enabled: Library.savedSongs.count > 0
                 onClicked: Player.playFromModel(Library.savedSongs, 0)
             }

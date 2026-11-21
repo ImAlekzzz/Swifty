@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a card's artwork (InteractiveMediaArtwork): on hover it lifts a little, its
 // shadow deepens and a round badge fades in. the playing item gets an outline.
@@ -27,7 +28,6 @@ Item {
 
     property url source
     property string placeholderSymbol: "music_note"
-    property string fallbackKey: source.toString().length > 0 ? source.toString() : placeholderSymbol
     property real radius: Appearance.sizes.artworkRadius
     property bool circular: false
     property string badgeSymbol: "arrow_forward"
@@ -58,7 +58,6 @@ Item {
         anchors.fill: parent
         source: root.source
         placeholderSymbol: root.placeholderSymbol
-        fallbackKey: root.fallbackKey
         circular: root.circular
         radius: root.radius
         scale: root.hovered ? 1.015 : 1

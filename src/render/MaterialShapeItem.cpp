@@ -33,7 +33,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
@@ -456,4 +456,4 @@ QSGNode *MaterialShapeItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeDat
     return node;
 }
 
-} // namespace swiftify
+} // namespace swifty

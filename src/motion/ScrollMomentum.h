@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,20 +24,23 @@
 #include <QObject>
 #include <QPointF>
 #include <QPointer>
+#include <QQuickItem>
 #include <QTimer>
 #include <QWindow>
 
 class QWheelEvent;
 
-namespace swiftify {
+namespace swifty {
 
 /// a trackpad swipe glides on once the fingers lift, as it does on macos.
-/// macos sends the glide itself, as wheel events in the momentum phase, and
-/// qt's flickables follow them; wayland compositors (libinput) stop at the
-/// lift and leave the glide to the app, so a list stopped dead under the
-/// fingers. installed on the application, this watches a window's trackpad
-/// scrolls and, after one ends, sends the momentum events macos would have:
-/// the swipe's speed, slowing, until it rests or a new touch stops it
+/// macos sends the glide itself, as wheel events in the momentum phase;
+/// wayland compositors (libinput) stop at the lift and leave the glide to the
+/// app, so a list stopped dead under the fingers. installed on the application,
+/// this watches a window's trackpad scrolls and, after one ends, keeps the
+/// view the swipe was moving going at the swipe's speed, slowing, until it
+/// rests, hits its end or a new touch stops it.
+/// the view is moved directly: qt's flickable, handed wheel events after the
+/// lift, measures them from where the swipe began and jumps back there
 class ScrollMomentum : public QObject {
     Q_OBJECT
 
@@ -53,25 +57,28 @@ private:
     };
 
     void track(QWindow *window, const QWheelEvent *event);
+    void pickViews(QWindow *window, const QPointF &position);
     void start(const QWheelEvent *end);
     void glide();
     void stop();
-    void send(Qt::ScrollPhase phase, const QPoint &pixelDelta);
 
     QList<Sample> m_samples;
     QTimer m_timer;
     QElapsedTimer m_clock;
     qint64 m_lastTick = 0;
     QPointer<QWindow> m_window;
-    QPointF m_position;
-    QPointF m_globalPosition;
-    Qt::KeyboardModifiers m_modifiers;
-    bool m_inverted = false;
-    quint64 m_timestamp = 0;
+    // the views a swipe was over that can scroll each way, and where each
+    // was when it began, to tell which way the swipe moved it
+    QPointer<QQuickItem> m_viewX;
+    QPointer<QQuickItem> m_viewY;
+    QPointF m_startPosition;
+    QPointF m_direction {1, 1};
     QPointF m_velocity;
     QPointF m_remainder;
+    qreal m_gain = 1.0;
     bool m_gliding = false;
-    bool m_sending = false;
+    // a swipe has begun and its views are not yet picked
+    bool m_pick = false;
 };
 
-} // namespace swiftify
+} // namespace swifty

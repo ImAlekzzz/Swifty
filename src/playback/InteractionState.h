@@ -24,7 +24,7 @@
 
 #include <algorithm>
 
-namespace swiftify {
+namespace swifty {
 
 /// how the volume is taken down as a sleep timer runs out (PlayerInteractionState.swift)
 enum class SleepFade { None, FinalSeconds, Entire };
@@ -120,4 +120,4 @@ private:
     quint64 m_songId = 0;
 };
 
-} // namespace swiftify
+} // namespace swifty

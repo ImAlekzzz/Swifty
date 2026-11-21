@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // a genre to explore: a two-colour gradient with a big faint shape of its
 // own cut off by the corner, its symbol on it, turning when hovered.
@@ -45,8 +46,6 @@ T.AbstractButton {
     implicitWidth: Appearance.sizes.cardSize
     implicitHeight: 112
     hoverEnabled: true
-    // click focus would let other mouse buttons grab and press it
-    focusPolicy: Qt.TabFocus
     scale: down ? 0.95 : (hovered ? 1.03 : 1)
 
     Behavior on scale {
@@ -115,7 +114,7 @@ T.AbstractButton {
             anchors.left: parent.left
             anchors.bottom: parent.bottom
             anchors.margins: 14
-                text: qsTranslate("Genres", root.name)
+            text: root.name
             color: "white"
             font.pixelSize: Appearance.fontSize.larger
             font.weight: Font.Bold

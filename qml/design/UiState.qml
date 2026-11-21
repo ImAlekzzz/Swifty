@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma Singleton
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // what the window shows, as opposed to what the player and library hold:
 // the immersive player, and requests for dialogs and the catchphrase pill
@@ -51,7 +52,7 @@ QtObject {
         property: "speed"
         value: root.spinSpeed
     }
-    readonly property string catchphrase: qsTr("i mean i guess bro")
+    readonly property string catchphrase: "i mean i guess bro"
 
     /// a clicked cover flying to the hero of the page it opens (HeroFlight).
     /// the click arms it with where the cover was; the hero that appears
@@ -133,7 +134,6 @@ QtObject {
             burstRequested(item, kind)
         }
     }
-    signal createPlaylistRequested()
     /// a new playlist of music files on this computer, starting with
     /// `first` when that is a song (or null)
     signal createLocalPlaylistRequested(var first)
@@ -147,14 +147,10 @@ QtObject {
         toastRequested(message.length > 0 ? message : catchphrase)
     }
 
-    /// what the + in the sidebar and the new-playlist tile do: an old library
-    /// login has to be upgraded before it may create anything.
+    /// what the + in the sidebar and the new-playlist tile do
+    /// a playlist is made of the music on this computer, so this is the one way
     function beginCreatePlaylist() {
-        if (Session.libraryNeedsAuthorizationUpgrade) {
-            Session.beginLibraryLogin()
-        } else {
-            createPlaylistRequested()
-        }
+        createLocalPlaylistRequested(null)
     }
 
     /// leaving the immersive player first, as going to an album or artist does
@@ -167,29 +163,4 @@ QtObject {
         immersiveOpen = false
         Library.goToArtist(song)
     }
-
-    /// connecting for the first time (SetupView) is under way: it shows
-    /// until playback is connected as well as the library, not only the
-    /// library. it begins only once the saved logins have been read, so a
-    /// launch that restores the library before playback never shows it, nor
-    /// does playback dropping later on
-    property bool setupUnderway: false
-    /// the setup shows rather than the library
-    readonly property bool needsSetup: !Session.libraryConnected || (setupUnderway && !Session.connected)
-
-    function followSetup() {
-        if (!Session.evaluatingStoredLogin && !Session.libraryConnected) {
-            setupUnderway = true
-        } else if (Session.libraryConnected && Session.connected) {
-            setupUnderway = false
-        }
-    }
-
-    readonly property Connections setupFollower: Connections {
-        target: Session
-        function onLibraryConnectedChanged() { root.followSetup() }
-        function onConnectedChanged() { root.followSetup() }
-        function onEvaluatingStoredLoginChanged() { root.followSetup() }
-    }
-    Component.onCompleted: followSetup()
 }

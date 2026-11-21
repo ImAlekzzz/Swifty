@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // a material 3 expressive slider: the track splits around a slim handle, with
 // a stop dot at the far end. horizontal or vertical (the equalizer's bands).
@@ -119,12 +120,7 @@ T.Slider {
         }
     }
 
-    // Handler needs to be on a child, otherwise the slider takes every mouse button instead of only the left one.
-    Item {
-        anchors.fill: parent
-
-        HoverHandler {
-            cursorShape: root.pressed ? Qt.ClosedHandCursor : Qt.PointingHandCursor
-        }
+    HoverHandler {
+        cursorShape: root.pressed ? Qt.ClosedHandCursor : Qt.PointingHandCursor
     }
 }

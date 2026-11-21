@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +19,7 @@
 
 #include "system/dbus/SleepMonitor.h"
 
+#include "core/Diagnostics.h"
 #include "playback/PlaybackController.h"
 
 #include <QDBusConnection>
@@ -25,9 +27,9 @@
 #include <QDBusReply>
 #include <QLoggingCategory>
 
-namespace swiftify {
+namespace swifty {
 
-Q_LOGGING_CATEGORY(lcSleep, "swiftify.sleep")
+Q_LOGGING_CATEGORY(lcSleep, "swifty.sleep")
 
 namespace {
 const QString kService = QStringLiteral("org.freedesktop.login1");
@@ -65,7 +67,7 @@ void SleepMonitor::updateInhibitor()
         return;
     }
     QDBusMessage call = QDBusMessage::createMethodCall(kService, kPath, kManager, QStringLiteral("Inhibit"));
-    call << QStringLiteral("sleep") << QStringLiteral("Swiftify") << QStringLiteral("Pausing playback before sleep")
+    call << QStringLiteral("sleep") << QStringLiteral("Swifty") << QStringLiteral("Pausing playback before sleep")
          << QStringLiteral("delay");
     const QDBusReply<QDBusUnixFileDescriptor> reply = QDBusConnection::systemBus().call(call);
     if (reply.isValid()) {
@@ -76,6 +78,7 @@ void SleepMonitor::updateInhibitor()
 void SleepMonitor::prepareForSleep(bool sleeping)
 {
     if (sleeping) {
+        diagnostic("sleep", QStringLiteral("the computer is going to sleep, so playback pauses"));
         m_player->prepareForSleep();
         m_inhibitor = {};
     } else {
@@ -83,4 +86,4 @@ void SleepMonitor::prepareForSleep(bool sleeping)
     }
 }
 
-} // namespace swiftify
+} // namespace swifty

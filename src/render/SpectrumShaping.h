@@ -25,7 +25,7 @@
 
 /// the level and colour arithmetic of AudioSpectrumView.swift, kept apart
 /// from drawing so it can be tested.
-namespace swiftify::spectrum {
+namespace swifty::spectrum {
 
 /// maps 48 analysis bands onto `perSideCount` bars, giving the bass more of
 /// them. a bar covering several bands takes the strongest, so a narrow peak
@@ -48,4 +48,4 @@ using Rgba = std::array<float, 4>;
 Rgba rgba(const QColor &color);
 QColor color(const Rgba &rgba);
 
-} // namespace swiftify::spectrum
+} // namespace swifty::spectrum

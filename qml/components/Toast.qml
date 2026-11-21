@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the catchphrase pill: a sparkle and a phrase, gone after a couple of seconds.
 Item {

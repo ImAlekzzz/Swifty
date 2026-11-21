@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // end4's elementMove: things moving to a new place, with a little overshoot.
 NumberAnimation {

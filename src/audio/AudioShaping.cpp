@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +21,7 @@
 
 #include "app/Settings.h"
 #include "core/RustCore.h"
-#include "spotify/SpotifyError.h"
-#include "spotify/SpotifySession.h"
+#include "core/PlaybackError.h"
 
 #include <QCollator>
 #include <QJsonArray>
@@ -32,14 +32,13 @@
 #include <algorithm>
 #include <cmath>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
 AudioShaping *s_instance = nullptr;
 
 const QString kGainsKey = QStringLiteral("audioEqualizerGains");
-const QString kPreampKey = QStringLiteral("audioEqualizerPreamp");
 const QString kEnabledKey = QStringLiteral("audioEqualizerEnabled");
 const QString kPresetsKey = QStringLiteral("audioEqualizerPresets");
 const QString kTempoKey = QStringLiteral("audioPlaybackTempo");
@@ -74,7 +73,7 @@ bool EqualizerPreset::matches(const QList<double> &other) const
 
 const QList<EqualizerPreset> &EqualizerPreset::builtIn()
 {
-    // presets use the same names as spotify
+    // the usual preset names
     static const QList<EqualizerPreset> presets {
         {QStringLiteral("Flat"), {0, 0, 0, 0, 0, 0}},
         {QStringLiteral("Bass Booster"), {7, 5.5, 2.5, 0, 0, 0}},
@@ -102,7 +101,7 @@ const QList<EqualizerPreset> &EqualizerPreset::builtIn()
     return presets;
 }
 
-AudioShaping::AudioShaping(PlaybackCore *core, Settings *settings, SpotifySession *session, QObject *parent)
+AudioShaping::AudioShaping(PlaybackCore *core, Settings *settings, QObject *parent)
     : QObject(parent)
     , m_core(core)
     , m_settings(settings)
@@ -121,7 +120,6 @@ AudioShaping::AudioShaping(PlaybackCore *core, Settings *settings, SpotifySessio
             m_gains[band] = std::clamp(stored.at(band).toDouble(), -kMaximumGain, kMaximumGain);
         }
     }
-    m_preampGain = std::clamp(m_settings->value(kPreampKey, 0.0).toDouble(), -kMaximumGain, kMaximumGain);
     m_equalizerEnabled = m_settings->value(kEnabledKey, true).toBool();
     m_tempo = m_settings->value(kTempoKey, 1.0).toDouble();
     m_pitch = m_settings->value(kPitchKey, 0.0).toDouble();
@@ -141,8 +139,6 @@ AudioShaping::AudioShaping(PlaybackCore *core, Settings *settings, SpotifySessio
     }
 
     apply();
-    // a logout replaces the core, and a new one starts flat.
-    connect(session, &SpotifySession::loggedOut, this, &AudioShaping::apply);
 }
 
 AudioShaping::~AudioShaping()
@@ -209,7 +205,7 @@ bool AudioShaping::isFlat() const
 
 bool AudioShaping::isNeutral() const
 {
-    return isFlat() && std::abs(m_preampGain) < 0.01 && std::abs(m_tempo - 1) < 0.001 && std::abs(m_pitch) < 0.001;
+    return isFlat() && std::abs(m_tempo - 1) < 0.001 && std::abs(m_pitch) < 0.001;
 }
 
 void AudioShaping::setGains(const QList<double> &gains)
@@ -232,19 +228,6 @@ void AudioShaping::setGain(int band, double gain)
     QList<double> gains = m_gains;
     gains[band] = std::clamp(gain, -kMaximumGain, kMaximumGain);
     setGains(gains);
-}
-
-void AudioShaping::setPreampGain(double gain)
-{
-    gain = std::clamp(gain, -kMaximumGain, kMaximumGain);
-    if (!std::isfinite(gain) || std::abs(gain - m_preampGain) < 0.001) {
-        return;
-    }
-    m_preampGain = gain;
-    m_settings->setValue(kPreampKey, m_preampGain);
-    applyPreamp();
-    emit preampGainChanged();
-    emit neutralChanged();
 }
 
 void AudioShaping::setEqualizerEnabled(bool enabled)
@@ -350,7 +333,6 @@ void AudioShaping::storePresets()
 
 void AudioShaping::reset()
 {
-    setPreampGain(0.0);
     setGains(QList<double>(m_frequencies.size(), 0.0));
     setTempo(1);
     setPitch(0);
@@ -358,17 +340,8 @@ void AudioShaping::reset()
 
 void AudioShaping::apply()
 {
-    applyPreamp();
     applyEqualizer();
     applyShaping();
-}
-
-void AudioShaping::applyPreamp()
-{
-    try {
-        m_core->setPreampGain(float(m_preampGain));
-    } catch (const SpotifyError &) {
-    }
 }
 
 void AudioShaping::applyEqualizer()
@@ -381,7 +354,7 @@ void AudioShaping::applyEqualizer()
     }
     try {
         m_core->setEqualizer(gains);
-    } catch (const SpotifyError &) {
+    } catch (const PlaybackError &) {
     }
 }
 
@@ -390,8 +363,8 @@ void AudioShaping::applyShaping()
     // pitch is not an independent control while speed is carrying it.
     try {
         m_core->setPlaybackShaping(float(m_tempo), m_preservesPitch ? float(m_pitch) : 0.0f, m_preservesPitch);
-    } catch (const SpotifyError &) {
+    } catch (const PlaybackError &) {
     }
 }
 
-} // namespace swiftify
+} // namespace swifty

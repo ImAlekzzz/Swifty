@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
-import Swiftify
+import Swifty
 
 // the lyrics column (LyricsPanel): the current line full size and bright, the
 // rest smaller and faded, kept in the middle as the song moves. a line seeks
@@ -37,7 +38,7 @@ Item {
         spacing: 12
         LoadingSpinner { anchors.horizontalCenter: parent.horizontalCenter }
         StyledText {
-            text: qsTr("Loading lyrics…")
+            text: "Loading lyrics…"
             color: root.scheme.onSurfaceVariant
         }
     }
@@ -47,8 +48,8 @@ Item {
         width: parent.width - 32
         Reveal.shown: !Player.loadingLyrics && !Player.hasLyrics
         symbol: "lyrics"
-        title: qsTr("Lyrics Unavailable")
-        description: Player.lyricsMessage.length > 0 ? qsTranslate("Errors", Player.lyricsMessage) : qsTr("i guess bro")
+        title: "Lyrics Unavailable"
+        description: Player.lyricsMessage.length > 0 ? Player.lyricsMessage : "i guess bro"
     }
 
     ListView {
@@ -187,7 +188,7 @@ Item {
 
         footer: StyledText {
             topPadding: 18
-            text: qsTr("Lyrics provided by ") + Player.lyricsProvider
+            text: "Lyrics provided by " + Player.lyricsProvider
             font.pixelSize: Appearance.fontSize.smaller
             color: root.scheme.outline
         }

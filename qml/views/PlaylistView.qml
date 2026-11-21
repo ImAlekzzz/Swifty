@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a playlist (PlaylistDetailView)
 Item {
@@ -41,20 +42,19 @@ Item {
         anchors.centerIn: parent
         Reveal.shown: !root.playlist.valid
         symbol: "queue_music"
-        title: qsTr("Playlist Unavailable")
+        title: "Playlist Unavailable"
     }
 
     SongListPage {
         anchors.fill: parent
         Reveal.shown: root.playlist.valid
         songs: Library.displayedPlaylistSongs
-        loading: Library.loadingSongs
         allowsPlaylistRemoval: Library.selectedPlaylistEditable
         reorderable: Library.canReorderPlaylist
         showsEmpty: Library.playlistSongs.count === 0 || Library.displayedPlaylistSongs.count === 0
         emptySymbol: Library.playlistSongs.count === 0 ? "music_note" : "search_off"
-        emptyTitle: Library.playlistSongs.count === 0 ? qsTr("No Songs") : qsTr("No Results for “%1”").arg(Library.playlistFilterQuery.trim())
-        emptyDescription: Library.playlistSongs.count > 0 ? qsTr("Check the spelling or try a new search.") : root.playlist.isLocal ? qsTr("Add tracks from anywhere on your computer, or drop them here.") : qsTr("Add songs from Search using the More menu.")
+        emptyTitle: Library.playlistSongs.count === 0 ? "No Songs" : "No Results for “" + Library.playlistFilterQuery.trim() + "”"
+        emptyDescription: Library.playlistSongs.count > 0 ? "Check the spelling or try a new search." : root.playlist.isLocal ? "Add tracks from anywhere on your computer, or drop them here." : "Add songs from Search using the More menu."
 
         MusicPicker {
             id: trackPicker
@@ -63,7 +63,6 @@ Item {
 
         hero: CollectionHero {
             artworkUrl: root.playlist.artworkUrl
-            fallbackKey: root.playlist.id.length > 0 ? root.playlist.id : root.playlist.name
             kind: root.playlist.isLocal ? "LOCAL PLAYLIST" : "PLAYLIST"
             title: root.playlist.name
             description: root.playlist.description
@@ -72,7 +71,6 @@ Item {
             actions: [
                 TextButton {
                     id: playButton
-                    objectName: "playButton"
                     // a little wider than its words, and as wide as shuffle
                     // beside it, whose words are longer
                     width: iconOnly ? compactSize : Math.max(naturalWidth + 28, shuffleButton.naturalWidth)
@@ -82,14 +80,13 @@ Item {
                     wavy: true
                     symbol: "play_arrow"
                     burst: "play"
-                    text: qsTr("Play")
-                    enabled: Library.displayedPlaylistSongs.count > 0
-                    onClicked: Player.playInOrder(Library.displayedPlaylistSongs)
+                    text: "Play"
+                    enabled: Library.playlistSongs.count > 0
+                    onClicked: Player.playFromModel(Library.playlistSongs, 0)
                 },
                 // play's twin in the primary's softer tone
                 TextButton {
                     id: shuffleButton
-                    objectName: "shuffleButton"
                     width: playButton.width
                     iconOnly: parent ? parent.compactActions : false
                     compactSize: parent ? parent.actionSize : 48
@@ -97,16 +94,16 @@ Item {
                     wavy: true
                     symbol: "shuffle"
                     burst: "play"
-                    text: qsTr("Shuffle")
+                    text: "Shuffle"
                     colBackground: shuffleButton.scheme.primaryContainer
                     colBackgroundHover: shuffleButton.scheme.primaryContainerHover
                     colRipple: shuffleButton.scheme.primaryContainerActive
                     labelColor: shuffleButton.scheme.onPrimaryContainer
-                    enabled: Library.displayedPlaylistSongs.count > 0
-                    onClicked: Player.shufflePlay(Library.displayedPlaylistSongs)
+                    enabled: Library.playlistSongs.count > 0
+                    onClicked: Player.shufflePlay(Library.playlistSongs)
                 },
-                // a playlist made here takes tracks from anywhere: copies,
-                // so the originals can move or go
+                // a playlist made here takes tracks from anywhere. a file from
+                // outside the library's folders joins the library
                 TextButton {
                     visible: root.playlist.isLocal
                     iconOnly: parent ? parent.compactActions : false
@@ -114,8 +111,7 @@ Item {
                     implicitHeight: iconOnly ? compactSize : 48
                     variant: TextButton.Tonal
                     symbol: "add"
-                    text: qsTr("Add Tracks")
-                    busy: LocalFiles.copying
+                    text: "Add Tracks"
                     onClicked: trackPicker.pickFiles()
                 }
             ]

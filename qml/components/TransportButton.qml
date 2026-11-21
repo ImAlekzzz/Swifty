@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a transport icon with the swift app's one-shot symbol effects: previous and
 // next nudge in their direction, shuffle and repeat bounce. performance mode

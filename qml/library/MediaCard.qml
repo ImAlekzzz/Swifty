@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // a shelf or grid card: artwork, a title of up to two lines and a subtitle.
 // pressing shrinks it slightly and dims it (MediaCardButtonStyle).
@@ -30,7 +31,6 @@ T.AbstractButton {
     /// what shows in place of a cover it has not got
     property string placeholderSymbol: "music_note"
     property string title
-    property string fallbackKey: title
     property string subtitle
     property bool circular: false
     property bool current: false
@@ -46,8 +46,6 @@ T.AbstractButton {
     implicitWidth: artworkSize
     implicitHeight: column.implicitHeight
     hoverEnabled: true
-    // click focus would let other mouse buttons grab and press it
-    focusPolicy: Qt.TabFocus
     // lifts on hover, squishes on press, and springs between them
     scale: down ? 0.95 : (hovered ? 1.03 : 1)
     opacity: down ? 0.86 : 1
@@ -67,7 +65,6 @@ T.AbstractButton {
             height: root.artworkSize
             source: root.artworkUrl
             placeholderSymbol: root.placeholderSymbol
-            fallbackKey: root.fallbackKey
             circular: root.circular
             current: root.current
             badgeSymbol: root.badgeSymbol

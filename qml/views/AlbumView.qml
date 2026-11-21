@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // an album (AlbumDetailView)
 SongListPage {
@@ -37,8 +38,7 @@ SongListPage {
     }
 
     songs: Library.albumSongs
-    loading: Library.loadingSongs
-    loadingText: qsTr("Loading album…")
+    loadingText: "Loading album…"
 
     hero: CollectionHero {
         artworkUrl: root.album.artworkUrl
@@ -55,7 +55,7 @@ SongListPage {
                 wavy: true
                 symbol: "play_arrow"
                 burst: "play"
-                text: qsTr("Play")
+                text: "Play"
                 enabled: Library.albumSongs.count > 0
                 onClicked: Player.playFromModel(Library.albumSongs, 0)
             }

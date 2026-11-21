@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,16 +21,12 @@
 
 #include <QString>
 
-namespace swiftify::paths {
+namespace swifty::paths {
 
-/// $XDG_DATA_HOME/Swiftify, created on first use: what the app keeps of the
+/// $XDG_DATA_HOME/Swifty, created on first use: what the app keeps of the
 /// person's, such as their local playlists.
 QString dataDirectory();
-/// $XDG_CACHE_HOME/Swiftify, for artwork and other things safe to delete.
+/// $XDG_CACHE_HOME/Swifty, for artwork and other things safe to delete.
 QString cacheDirectory();
-/// $XDG_DATA_HOME/Swiftify/logs, for diagnostic output.
-QString logDirectory();
-/// $XDG_DATA_HOME/Swiftify/logs/swiftify.log
-QString logFilePath();
 
-} // namespace swiftify::paths
+} // namespace swifty::paths

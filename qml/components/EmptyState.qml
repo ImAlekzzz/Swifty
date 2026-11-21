@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // what a page shows with nothing in it: end4's page placeholder, a symbol on a
 // tonal cookie over a title and a line of explanation. the cookie springs in

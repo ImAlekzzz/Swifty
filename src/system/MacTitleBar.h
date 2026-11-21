@@ -23,7 +23,7 @@
 #include <QQuickWindow>
 #include <QtQml/qqmlregistration.h>
 
-namespace swiftify {
+namespace swifty {
 
 /// the top of a window on macos: the content runs up under a transparent
 /// title bar, and of the system's bar only the traffic lights stay: no
@@ -52,4 +52,4 @@ private:
     QPointer<QQuickWindow> m_target;
 };
 
-} // namespace swiftify
+} // namespace swifty

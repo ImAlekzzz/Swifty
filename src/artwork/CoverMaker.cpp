@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,6 @@
 #include "artwork/CoverMaker.h"
 
 #include "artwork/PlaylistCovers.h"
-#include "spotify/WebApi.h"
 
 #include <QPainter>
 #include <QQuickWindow>
@@ -27,7 +27,10 @@
 
 #include <algorithm>
 
-namespace swiftify {
+namespace swifty {
+
+/// the largest jpeg a playlist cover is made into
+constexpr int kMaximumCoverBytes = 256'000;
 
 PlaylistCoverItem::PlaylistCoverItem(QQuickItem *parent)
     : QQuickPaintedItem(parent)
@@ -140,7 +143,7 @@ QByteArray CoverMaker::cropPhoto(qreal viewport, qreal zoom, QSizeF offset) cons
     if (m_image.isNull()) {
         return {};
     }
-    return covers::squareJpeg(m_image, cropRect(viewport, zoom, offset), WebApi::kMaximumCoverBytes);
+    return covers::squareJpeg(m_image, cropRect(viewport, zoom, offset), kMaximumCoverBytes);
 }
 
 QUrl CoverMaker::preview(const QByteArray &jpeg)
@@ -148,4 +151,4 @@ QUrl CoverMaker::preview(const QByteArray &jpeg)
     return jpeg.isEmpty() ? QUrl() : QUrl(QStringLiteral("data:image/jpeg;base64,") + QString::fromLatin1(jpeg.toBase64()));
 }
 
-} // namespace swiftify
+} // namespace swifty

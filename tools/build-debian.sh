@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Swiftify, a spotify player for desktop
 # Copyright (C) 2026  shred0s
+# Copyright (C) 2026  ImAlekz (modified for Swifty)
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# build-debian.sh - Build and install swiftify on Debian/Ubuntu
+# build-debian.sh - Build and install swifty on Debian/Ubuntu
 #
 # Handles Qt 6.8 and 6.9 by patching out the QML features that need a newer Qt.
 # Run from the repository root or pass the repo path as an argument.
@@ -60,30 +61,33 @@ done
 # Find repo root
 if [[ -n "$REPO_DIR" ]]; then
     cd "$REPO_DIR"
-elif [[ -f "CMakeLists.txt" ]] && grep -q "project(Swiftify" CMakeLists.txt 2>/dev/null; then
+elif [[ -f "CMakeLists.txt" ]] && grep -q "project(Swifty" CMakeLists.txt 2>/dev/null; then
     : # already in repo root
-elif [[ -f "../CMakeLists.txt" ]] && grep -q "project(Swiftify" ../CMakeLists.txt 2>/dev/null; then
+elif [[ -f "../CMakeLists.txt" ]] && grep -q "project(Swifty" ../CMakeLists.txt 2>/dev/null; then
     cd ..
 else
-    error "Run this script from the swiftify repository root, or pass the path as an argument"
+    error "Run this script from the swifty repository root, or pass the path as an argument"
 fi
 
 REPO_DIR="$(pwd)"
-log "Building swiftify in $REPO_DIR"
+log "Building swifty in $REPO_DIR"
 
 # Check for required tools
 command -v cmake >/dev/null 2>&1 || error "cmake not found. Install it or run with --install-deps"
 command -v ninja >/dev/null 2>&1 || error "ninja not found. Install it or run with --install-deps"
 command -v rustc >/dev/null 2>&1 || error "rustc not found. Install Rust from https://rustup.rs"
 
-# Install dependencies if requested
+# Install dependencies if requested. no qtkeychain and no openssl: swifty keeps
+# no login, and qt's own tls plugin is what lyrics and artist pictures use. the
+# playlists and the library cache are sqlite, and debian ships qt's sqlite driver
+# as a package of its own
 if $INSTALL_DEPS; then
     log "Installing build dependencies..."
     sudo apt-get update
     sudo apt-get install -y \
         git qt6-base-dev qt6-declarative-dev qt6-shader-baker qt6-shadertools-dev \
-        qt6-wayland qt6-websockets-dev qtkeychain-qt6-dev qcoro-qt6-dev libpulse-dev libasound2-dev \
-        libssl-dev cmake ninja-build pkg-config
+        qt6-wayland qcoro-qt6-dev libpulse-dev libasound2-dev \
+        qt6-image-formats-plugins libqt6sql6-sqlite cmake ninja-build pkg-config
 fi
 
 # Detect Qt version
@@ -97,9 +101,10 @@ log "Detected Qt version: $QT_VERSION"
 apply_compat_patches() {
     log "Applying Qt $QT_VERSION compatibility patches..."
 
-    # Patch CMakeLists.txt version requirements
-    sed -i 's/Qt6 6\.10/Qt6 6.8/g' CMakeLists.txt
-    sed -i 's/REQUIRES 6\.10/REQUIRES 6.8/g' CMakeLists.txt
+    # Patch CMakeLists.txt version requirements (the file asks for 6.9 or 6.10,
+    # whichever this checkout has)
+    sed -i -E 's/Qt6 6\.(9|10)/Qt6 6.8/g' CMakeLists.txt
+    sed -i -E 's/REQUIRES 6\.(9|10)/REQUIRES 6.8/g' CMakeLists.txt
 
     # the final property modifier needs qt 6.10
     find qml -name "*.qml" -exec sed -i \
@@ -157,10 +162,8 @@ if [[ ":$PATH:" != *":$PREFIX/bin:"* ]]; then
     echo ""
 fi
 
-log "Done! Run 'swiftify' to start the app."
+log "Done! Run 'swifty' to start the app."
 echo ""
 echo "Before first use:"
-echo "  1. You need Spotify Premium"
-echo "  2. Create a Spotify app at https://developer.spotify.com/dashboard"
-echo "  3. Add http://127.0.0.1:8898/login as a redirect URI"
-echo "  4. Copy your Client ID (the app will ask for it)"
+echo "  1. Add your music: a folder or files, from the Home screen or the settings"
+echo "  2. (optional) A Discogs token in the settings, for artist pictures"

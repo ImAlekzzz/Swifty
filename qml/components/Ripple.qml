@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a press ripple clipped to a rounded shape by its shader, so the button under
 // it needs no layer. start() at the press, release() when it ends.

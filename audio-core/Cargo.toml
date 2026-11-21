@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 
 [features]
 default = []
-# a plain c abi for the qt front end (include/swiftify_core.h).
+# a plain c abi for the qt front end (include/swifty_core.h).
 capi = []
 
 [lib]

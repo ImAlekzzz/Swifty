@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a material 3 common button: filled, tonal, outlined, text or elevated, with
 // an optional leading symbol. Buttons keep their pill shape while pressing;

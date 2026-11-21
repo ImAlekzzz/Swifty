@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a material 3 icon button. the variant picks its container; a toggled button
 // fills its glyph and takes the selected container colours.

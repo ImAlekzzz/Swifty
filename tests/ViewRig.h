@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,13 +30,8 @@
 #include "library/LocalLibrary.h"
 #include "playback/PlaybackController.h"
 #include "render/SpectrumSource.h"
-#include "stats/PlayHistory.h"
-#include "stats/StatsStore.h"
-#include "spotify/CredentialStore.h"
-#include "spotify/SpotifySession.h"
 #include "theme/PlayerStyle.h"
 #include "theme/Theme.h"
-#include "system/DiscordPresence.h"
 
 #include <QCoreApplication>
 #include <QImage>
@@ -52,31 +48,24 @@
 
 #include <memory>
 
-namespace swiftify::testing {
+namespace swifty::testing {
 
 /// everything main() builds, around a core that plays nothing
 struct ViewRig {
     QTemporaryDir directory;
-    Settings settings {directory.filePath(QStringLiteral("swiftify.conf"))};
+    Settings settings {directory.filePath(QStringLiteral("swifty.conf"))};
     Theme theme {&settings};
     ErrorCenter errors {nullptr};
-    MemoryCredentialStore credentials;
     QNetworkAccessManager network;
     FakeCore core;
-    SpotifySession session {&core, &credentials, &network, &errors};
-    PlaybackController player {&core, &session, &settings, &errors};
-    DiscordPresence discord {&player, &settings};
-    LibraryStore library {&session, &settings, &errors};
-    AudioShaping sound {&core, &settings, &session};
+    PlaybackController player {&core, &settings, &errors};
+    LibraryStore library {&settings, &errors};
+    AudioShaping sound {&core, &settings};
     LocalLibrary localFiles {&settings, nullptr, directory.path()};
     AppController app {nullptr};
     ArtworkCache artwork {&network};
     PlayerStyle style {&player, &theme, &artwork};
     SpectrumSource spectrum {&core, &player};
-    // the plays are kept in memory only, so a run leaves nothing behind
-    PlayHistory listeningHistory {QString {}};
-    PlayTracker listeningTracker {&player, &listeningHistory};
-    StatsStore stats {&settings, &session, &network, &listeningHistory, &listeningTracker};
     QQmlEngine engine;
 
     static constexpr QSize kSize {1280, 780};
@@ -90,11 +79,6 @@ struct ViewRig {
 
     ViewRig()
     {
-        // the tray's menu is native, and the platform tests run on has none
-        settings.setTrayIcon(false);
-        // Fallback sleeves use the same image provider as ordinary covers.
-        // Install it just as main() does, even when a fixture has no remote art.
-        engine.addImageProvider(QStringLiteral("art"), new ArtworkImageProvider);
         library.attachPlayer(&player);
         library.attachLocalFiles(&localFiles);
         window->resize(kSize);
@@ -195,7 +179,7 @@ struct ViewRig {
     std::unique_ptr<QQuickItem> show(const QString &type)
     {
         QQmlComponent component(&engine);
-        component.loadFromModule("Swiftify", type);
+        component.loadFromModule("Swifty", type);
         std::unique_ptr<QObject> object(component.create());
         if (!object) {
             qWarning().noquote() << component.errorString();
@@ -222,4 +206,4 @@ struct ViewRig {
     QImage frame;
 };
 
-} // namespace swiftify::testing
+} // namespace swifty::testing

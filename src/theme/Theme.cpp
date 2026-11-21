@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,9 +38,9 @@
 
 #include <functional>
 
-namespace swiftify {
+namespace swifty {
 
-Q_LOGGING_CATEGORY(lcTheme, "swiftify.theme")
+Q_LOGGING_CATEGORY(lcTheme, "swifty.theme")
 
 namespace {
 
@@ -92,16 +93,6 @@ QStringList schemeSearchRoots()
     }
     roots.removeDuplicates();
     return roots;
-}
-
-/// schemes desktop shells write somewhere of their own, among files that are
-/// not schemes, so they are named rather than searched for
-QStringList shellSchemeFiles()
-{
-    const QString cache = xdgDirectory("XDG_CACHE_HOME", QStringLiteral("/.cache"));
-    // dankmaterialshell runs matugen into its own cache, beside its clipboard,
-    // notifications and image caches
-    return {cache + QStringLiteral("/DankMaterialShell/dms-colors.json")};
 }
 
 std::optional<MaterialScheme::Roles> readScheme(const QString &path, bool dark)
@@ -199,7 +190,6 @@ Theme *Theme::create(QQmlEngine *, QJSEngine *)
 void Theme::resolveSystemScheme(bool dark)
 {
     m_schemeDirectories.clear();
-    m_schemeFiles.clear();
     m_systemRoles.reset();
     const QString configured = m_settings->matugenColorsPath();
     if (!configured.isEmpty()) {
@@ -209,24 +199,7 @@ void Theme::resolveSystemScheme(bool dark)
         return;
     }
     m_systemSchemePath.clear();
-    QStringList candidates = schemeFiles(schemeSearchRoots(), m_schemeDirectories);
-    // after end4's generated scheme, which is searched first, and before
-    // matugen's own folders
-    qsizetype shellIndex = 0;
-    while (shellIndex < candidates.size() && candidates.at(shellIndex).contains(QLatin1StringView("/quickshell/user/generated/"))) {
-        ++shellIndex;
-    }
-    for (const QString &path : shellSchemeFiles()) {
-        if (QFileInfo::exists(path)) {
-            candidates.insert(shellIndex++, path);
-            m_schemeFiles.append(path);
-        } else {
-            // until it appears; dms keeps clipboard and notification files
-            // beside it, so its folder is watched only while it is missing
-            m_schemeDirectories.append(existingAncestor(QFileInfo(path).absolutePath()));
-        }
-    }
-    m_schemeDirectories.removeDuplicates();
+    const QStringList candidates = schemeFiles(schemeSearchRoots(), m_schemeDirectories);
     for (const QString &path : candidates) {
         if (const auto roles = readScheme(path, dark)) {
             m_systemSchemePath = path;
@@ -296,7 +269,8 @@ void Theme::reload()
     if (const themes::Family *family = themes::find(m_settings->themeSource())) {
         m_colors->setRoles(themes::roles(dark ? family->dark : family->light, dark), dark);
     } else {
-        m_colors->setRoles(rolesFromSeed(QColor::fromRgba(kAccent), dark, true), dark);
+        const themes::Family &swifty = themes::swifty();
+        m_colors->setRoles(themes::roles(dark ? swifty.dark : swifty.light, dark), dark);
     }
     if (wasUsingSystem || hadDark != dark || previousPath != m_systemSchemePath || previousRoles != m_colors->roles()) {
         emit schemeChanged();
@@ -334,7 +308,8 @@ QList<ThemeOption> Theme::themeOptions(bool dark) const
                           QStringLiteral("Desktop"),
 #endif
                           desktop ? *desktop : rolesFromSeed(QColor::fromRgba(kAccent), dark, true)));
-    options.append(option(QStringLiteral("builtin"), QStringLiteral("Swiftify"), rolesFromSeed(QColor::fromRgba(kAccent), dark, true)));
+    const themes::Family &swifty = themes::swifty();
+    options.append(option(swifty.id, swifty.name, themes::roles(dark ? swifty.dark : swifty.light, dark)));
     for (const themes::Family &family : themes::families()) {
         options.append(option(family.id, family.name, themes::roles(dark ? family.dark : family.light, dark)));
     }
@@ -353,9 +328,6 @@ void Theme::watchSchemeFile()
     // All discovery directories are watched, including ancestors of missing
     // ones, so a newly generated file can supersede a lower-priority scheme.
     m_watcher.addPaths(m_schemeDirectories);
-    if (!m_schemeFiles.isEmpty()) {
-        m_watcher.addPaths(m_schemeFiles);
-    }
     if (!m_systemSchemePath.isEmpty()) {
         const QFileInfo info(m_systemSchemePath);
         if (info.exists()) {
@@ -365,4 +337,4 @@ void Theme::watchSchemeFile()
     }
 }
 
-} // namespace swiftify
+} // namespace swifty

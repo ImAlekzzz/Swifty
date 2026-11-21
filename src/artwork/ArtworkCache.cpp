@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,6 @@
 #include "artwork/ArtworkCache.h"
 
 #include "app/Paths.h"
-#include "artwork/PlaylistCovers.h"
 
 #include <QBuffer>
 #include <QFile>
@@ -30,7 +30,6 @@
 #include <QNetworkReply>
 #include <QPointer>
 #include <QThreadPool>
-#include <QUrlQuery>
 #include <QtConcurrent>
 
 #include <algorithm>
@@ -38,9 +37,9 @@
 #include <utility>
 #include <QCoroSignal>
 
-namespace swiftify {
+namespace swifty {
 
-Q_LOGGING_CATEGORY(lcArtwork, "swiftify.artwork")
+Q_LOGGING_CATEGORY(lcArtwork, "swifty.artwork")
 
 namespace {
 
@@ -196,20 +195,6 @@ void ArtworkCache::image(const QUrl &url, int pixels, ImageCallback callback)
     }
     m_decodes.insert(key, {std::move(callback)});
 
-    if (url.scheme() == QStringLiteral("swiftify-cover")) {
-        const QString identity = QUrlQuery(url).queryItemValue(QStringLiteral("key"), QUrl::FullyDecoded);
-        const bool dark = url.path() == QStringLiteral("/dark");
-        QtConcurrent::run(QThreadPool::globalInstance(), covers::fallback, identity, dark, size)
-            .then(this, [this, key](const QImage &image) {
-                m_decoded.insert(key, new QImage(image), int(image.sizeInBytes()));
-                const QList<ImageCallback> callbacks = m_decodes.take(key);
-                for (const ImageCallback &callback : callbacks) {
-                    callback(image);
-                }
-            });
-        return;
-    }
-
     bytes(url, [this, key, size](const QByteArray &data) {
         if (data.isEmpty()) {
             const QList<ImageCallback> callbacks = m_decodes.take(key);
@@ -288,6 +273,6 @@ QQuickImageResponse *ArtworkImageProvider::requestImageResponse(const QString &i
     return new ArtworkResponse(url, pixels);
 }
 
-} // namespace swiftify
+} // namespace swifty
 
 #include "ArtworkCache.moc"

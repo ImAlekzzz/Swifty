@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,7 +28,7 @@
 class QQmlEngine;
 class QJSEngine;
 
-namespace swiftify {
+namespace swifty {
 
 /// the app's preferences, under the macos app's key names and defaults
 /// (AppDesign.swift) so the two read the same way. stores that keep their own
@@ -38,23 +39,12 @@ class Settings : public QObject {
     QML_SINGLETON
 
     Q_PROPERTY(bool visualizersEnabled READ visualizersEnabled WRITE setVisualizersEnabled NOTIFY visualizersEnabledChanged FINAL)
-    Q_PROPERTY(bool playerBarVisualizer READ playerBarVisualizer WRITE setPlayerBarVisualizer NOTIFY playerBarVisualizerChanged FINAL)
-    Q_PROPERTY(bool trackListVisualizer READ trackListVisualizer WRITE setTrackListVisualizer NOTIFY trackListVisualizerChanged FINAL)
-    Q_PROPERTY(bool immersiveVisualizer READ immersiveVisualizer WRITE setImmersiveVisualizer NOTIFY immersiveVisualizerChanged FINAL)
     Q_PROPERTY(bool circularVisualizer READ circularVisualizer WRITE setCircularVisualizer NOTIFY circularVisualizerChanged FINAL)
-    Q_PROPERTY(bool continuousVisualizer READ continuousVisualizer WRITE setContinuousVisualizer NOTIFY continuousVisualizerChanged FINAL)
     /// the players' covers round, with their squiggle edge, while visualizers
     /// are off; with them on, the circular style rounds them
     Q_PROPERTY(bool roundArtwork READ roundArtwork WRITE setRoundArtwork NOTIFY roundArtworkChanged FINAL)
     Q_PROPERTY(QString visualizerShape READ visualizerShape WRITE setVisualizerShape NOTIFY visualizerShapeChanged FINAL)
     Q_PROPERTY(double visualizerSensitivity READ visualizerSensitivity WRITE setVisualizerSensitivity NOTIFY visualizerSensitivityChanged FINAL)
-    Q_PROPERTY(int streamingQuality READ streamingQuality WRITE setStreamingQuality NOTIFY streamingQualityChanged FINAL)
-    Q_PROPERTY(bool normalizeVolume READ normalizeVolume WRITE setNormalizeVolume NOTIFY normalizeVolumeChanged FINAL)
-    Q_PROPERTY(bool crossfadeEnabled READ crossfadeEnabled WRITE setCrossfadeEnabled NOTIFY crossfadeEnabledChanged FINAL)
-    Q_PROPERTY(int crossfadeDurationSeconds READ crossfadeDurationSeconds WRITE setCrossfadeDurationSeconds NOTIFY crossfadeDurationSecondsChanged FINAL)
-    /// how much of the songs streamed is kept, so playing one again needs no
-    /// download: 500, 1000 or 2000 megabytes
-    Q_PROPERTY(int songCacheMegabytes READ songCacheMegabytes WRITE setSongCacheMegabytes NOTIFY songCacheMegabytesChanged FINAL)
     Q_PROPERTY(bool livingBackdrop READ livingBackdrop WRITE setLivingBackdrop NOTIFY livingBackdropChanged FINAL)
     Q_PROPERTY(double backdropBlur READ backdropBlur WRITE setBackdropBlur NOTIFY backdropBlurChanged FINAL)
     Q_PROPERTY(double backdropReactivity READ backdropReactivity WRITE setBackdropReactivity NOTIFY backdropReactivityChanged FINAL)
@@ -74,29 +64,31 @@ class Settings : public QObject {
     Q_PROPERTY(QString themeMode READ themeMode WRITE setThemeMode NOTIFY themeModeChanged FINAL)
     Q_PROPERTY(QString matugenColorsPath READ matugenColorsPath WRITE setMatugenColorsPath NOTIFY matugenColorsPathChanged FINAL)
     Q_PROPERTY(bool showWindowControls READ showWindowControls WRITE setShowWindowControls NOTIFY showWindowControlsChanged FINAL)
-    Q_PROPERTY(bool windowControlsOnRight READ windowControlsOnRight WRITE setWindowControlsOnRight NOTIFY windowControlsOnRightChanged FINAL)
-    /// where the stats page reads from: "statsfm" or "local"
-    Q_PROPERTY(QString statsSource READ statsSource WRITE setStatsSource NOTIFY statsSourceChanged FINAL)
-    Q_PROPERTY(QString statsFmUsername READ statsFmUsername WRITE setStatsFmUsername NOTIFY statsFmUsernameChanged FINAL)
-    /// whether songs played here are kept for the local stats
-    Q_PROPERTY(bool trackListening READ trackListening WRITE setTrackListening NOTIFY trackListeningChanged FINAL)
     Q_PROPERTY(bool nativeTitleBar READ nativeTitleBar WRITE setNativeTitleBar NOTIFY nativeTitleBarChanged FINAL)
     Q_PROPERTY(bool trayIcon READ trayIcon WRITE setTrayIcon NOTIFY trayIconChanged FINAL)
-    /// the whole window's zoom, as ctrl + and ctrl - set it
-    Q_PROPERTY(double zoom READ zoom WRITE setZoom NOTIFY zoomChanged FINAL)
-    Q_PROPERTY(bool discordEnabled READ discordEnabled WRITE setDiscordEnabled NOTIFY discordEnabledChanged FINAL)
-    Q_PROPERTY(QString discordApplicationId READ discordApplicationId WRITE setDiscordApplicationId NOTIFY discordApplicationIdChanged FINAL)
-    Q_PROPERTY(bool loggingEnabled READ isLoggingEnabled WRITE setLoggingEnabled NOTIFY loggingEnabledChanged FINAL)
-    Q_PROPERTY(bool loggingActive READ isLoggingActive CONSTANT FINAL)
-    Q_PROPERTY(QString logDirectory READ logDirectory CONSTANT FINAL)
-    Q_PROPERTY(QString logFilePath READ logFilePath CONSTANT FINAL)
-    Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged FINAL)
-    Q_PROPERTY(bool russianEnabled READ isRussianEnabled NOTIFY languageAvailabilityChanged FINAL)
-    Q_PROPERTY(bool germanEnabled READ isGermanEnabled NOTIFY languageAvailabilityChanged FINAL)
-    Q_PROPERTY(QString disabledLanguageMessage READ disabledLanguageMessage CONSTANT FINAL)
+    /// look a song's lyrics up on LRCLIB and MusicBrainz, ahead of the
+    /// lyrics kept beside or inside the file. sends the title, artist, album and
+    /// length of what plays to those services.
+    Q_PROPERTY(bool onlineLyrics READ onlineLyrics WRITE setOnlineLyrics NOTIFY onlineLyricsChanged FINAL)
+    /// look an artist's picture up on Discogs (needs a token),
+    /// ahead of a picture file kept in the artist's folder. sends the artist's name
+    /// to those services.
+    Q_PROPERTY(bool onlineArtistImages READ onlineArtistImages WRITE setOnlineArtistImages NOTIFY onlineArtistImagesChanged FINAL)
+    /// a personal access token from discogs.com/settings/developers, which
+    /// Discogs asks for with every search. empty: Discogs is not asked
+    Q_PROPERTY(QString discogsToken READ discogsToken WRITE setDiscogsToken NOTIFY discogsTokenChanged FINAL)
+    /// show what plays on the Discord profile, through the Discord app running
+    /// on this computer (DiscordPresence)
+    Q_PROPERTY(bool discordPresence READ discordPresence WRITE setDiscordPresence NOTIFY discordPresenceChanged FINAL)
+    /// the Application ID of the Discord application (discord.com/developers)
+    /// whose name Discord shows after "Listening to". empty: Swifty's own, below
+    Q_PROPERTY(QString discordClientId READ discordClientId WRITE setDiscordClientId NOTIFY discordClientIdChanged FINAL)
+    /// Swifty's own Discord application, used while discordClientId is empty. an
+    /// Application ID is public (Discord shows it to anyone), not a secret
+    Q_PROPERTY(QString discordDefaultClientId READ discordDefaultClientId CONSTANT FINAL)
 
 public:
-    /// the default file, ~/.config/Swiftify/Swiftify.conf. no default argument:
+    /// the default file, ~/.config/Swifty/Swifty.ini. no default argument:
     /// qml builds a singleton with a default constructor in preference to
     /// create(), and would end up with an instance of its own
     explicit Settings(QObject *parent);
@@ -116,22 +108,9 @@ public:
     /// every audio visualizer in the app
     bool visualizersEnabled() const { return m_visualizersEnabled; }
     void setVisualizersEnabled(bool value);
-    bool playerBarVisualizer() const { return m_playerBarVisualizer; }
-    void setPlayerBarVisualizer(bool value);
-    bool trackListVisualizer() const { return m_trackListVisualizer; }
-    void setTrackListVisualizer(bool value);
-    bool immersiveVisualizer() const { return m_immersiveVisualizer; }
-    void setImmersiveVisualizer(bool value);
-    bool anyVisualizerEnabled() const
-    {
-        return m_visualizersEnabled && (m_playerBarVisualizer || m_trackListVisualizer || m_immersiveVisualizer);
-    }
     /// ring around round artwork instead of a band of bars
     bool circularVisualizer() const { return m_circularVisualizer; }
     void setCircularVisualizer(bool value);
-    /// the immersive band as one row from bass to treble instead of mirrored
-    bool continuousVisualizer() const { return m_continuousVisualizer; }
-    void setContinuousVisualizer(bool value);
     bool roundArtwork() const { return m_roundArtwork; }
     void setRoundArtwork(bool value);
     /// bars or wave. stored under its first name, from when it applied to the ring alone
@@ -140,16 +119,6 @@ public:
     double visualizerSensitivity() const { return m_visualizerSensitivity; }
     void setVisualizerSensitivity(double value);
     /// kbps: 96, 160 or 320
-    int streamingQuality() const { return m_streamingQuality; }
-    int songCacheMegabytes() const { return m_songCacheMegabytes; }
-    void setSongCacheMegabytes(int megabytes);
-    void setStreamingQuality(int value);
-    bool normalizeVolume() const { return m_normalizeVolume; }
-    void setNormalizeVolume(bool value);
-    bool crossfadeEnabled() const { return m_crossfadeEnabled; }
-    void setCrossfadeEnabled(bool value);
-    int crossfadeDurationSeconds() const { return m_crossfadeDurationSeconds; }
-    void setCrossfadeDurationSeconds(int value);
     /// animate the immersive background with the music
     bool livingBackdrop() const { return m_livingBackdrop; }
     void setLivingBackdrop(bool value);
@@ -188,56 +157,34 @@ public:
     /// linux only. minimise, maximise and close in the top bar
     bool showWindowControls() const { return m_showWindowControls; }
     void setShowWindowControls(bool value);
-    bool windowControlsOnRight() const { return m_windowControlsOnRight; }
-    QString statsSource() const { return m_statsSource; }
-    void setStatsSource(const QString &value);
-    QString statsFmUsername() const { return m_statsFmUsername; }
-    void setStatsFmUsername(const QString &value);
-    bool trackListening() const { return m_trackListening; }
-    void setTrackListening(bool value);
-    void setWindowControlsOnRight(bool value);
     bool nativeTitleBar() const { return m_nativeTitleBar; }
     void setNativeTitleBar(bool value);
     /// linux only
     bool trayIcon() const { return m_trayIcon; }
     void setTrayIcon(bool value);
-    double zoom() const { return m_zoom; }
-    void setZoom(double value);
-    bool discordEnabled() const { return m_discordEnabled; }
-    void setDiscordEnabled(bool value);
-    QString discordApplicationId() const { return m_discordApplicationId; }
-    void setDiscordApplicationId(const QString &value);
-    QString language() const { return m_language; }
-    void setLanguage(const QString &value);
-    bool isLoggingEnabled() const { return m_loggingEnabled; }
-    void setLoggingEnabled(bool value);
-    bool isLoggingActive() const;
-    QString logDirectory() const;
-    QString logFilePath() const;
-    Q_INVOKABLE void openLogsFolder() const;
-    Q_INVOKABLE void openLogFile() const;
-    bool isRussianEnabled() const;
-    bool isGermanEnabled() const;
-    QString disabledLanguageMessage() const;
-    Q_INVOKABLE bool isLanguageEnabled(const QString &language) const;
-    void enforceEnabledLanguage();
-    bool takeRevertedDisabledLanguage();
+    bool onlineLyrics() const { return m_onlineLyrics; }
+    void setOnlineLyrics(bool value);
+    bool onlineArtistImages() const { return m_onlineArtistImages; }
+    void setOnlineArtistImages(bool value);
+    QString discogsToken() const { return m_discogsToken; }
+    void setDiscogsToken(const QString &value);
+    bool discordPresence() const { return m_discordPresence; }
+    void setDiscordPresence(bool value);
+    QString discordClientId() const { return m_discordClientId; }
+    static QString discordDefaultClientId() { return QStringLiteral("1571430563569737879"); }
+    /// the one that is used: the person's own if they gave one, else Swifty's
+    QString effectiveDiscordClientId() const
+    {
+        return m_discordClientId.isEmpty() ? discordDefaultClientId() : m_discordClientId;
+    }
+    void setDiscordClientId(const QString &value);
 
 signals:
     void visualizersEnabledChanged();
-    void playerBarVisualizerChanged();
-    void trackListVisualizerChanged();
-    void immersiveVisualizerChanged();
     void circularVisualizerChanged();
-    void continuousVisualizerChanged();
     void roundArtworkChanged();
     void visualizerShapeChanged();
     void visualizerSensitivityChanged();
-    void streamingQualityChanged();
-    void normalizeVolumeChanged();
-    void crossfadeEnabledChanged();
-    void crossfadeDurationSecondsChanged();
-    void songCacheMegabytesChanged();
     void livingBackdropChanged();
     void backdropBlurChanged();
     void backdropReactivityChanged();
@@ -253,18 +200,13 @@ signals:
     void themeModeChanged();
     void matugenColorsPathChanged();
     void showWindowControlsChanged();
-    void windowControlsOnRightChanged();
-    void statsSourceChanged();
-    void statsFmUsernameChanged();
-    void trackListeningChanged();
     void nativeTitleBarChanged();
     void trayIconChanged();
-    void zoomChanged();
-    void discordEnabledChanged();
-    void discordApplicationIdChanged();
-    void loggingEnabledChanged();
-    void languageChanged();
-    void languageAvailabilityChanged();
+    void onlineLyricsChanged();
+    void onlineArtistImagesChanged();
+    void discogsTokenChanged();
+    void discordPresenceChanged();
+    void discordClientIdChanged();
 
 private:
     void load();
@@ -272,19 +214,10 @@ private:
     QSettings m_store;
 
     bool m_visualizersEnabled = true;
-    bool m_playerBarVisualizer = true;
-    bool m_trackListVisualizer = true;
-    bool m_immersiveVisualizer = true;
     bool m_circularVisualizer = false;
-    bool m_continuousVisualizer = false;
     bool m_roundArtwork = false;
     QString m_visualizerShape = QStringLiteral("bars");
     double m_visualizerSensitivity = 1.0;
-    int m_streamingQuality = 160;
-    bool m_normalizeVolume = false;
-    bool m_crossfadeEnabled = false;
-    int m_crossfadeDurationSeconds = 5;
-    int m_songCacheMegabytes = 1000;
     bool m_livingBackdrop = true;
     double m_backdropBlur = 16.0;
     double m_backdropReactivity = 0.3;
@@ -296,26 +229,21 @@ private:
     bool m_reduceMotion = false;
     bool m_performanceMode = false;
     bool m_noShapes = false;
-    QString m_themeSource = QStringLiteral("spotify");
+    QString m_themeSource = QStringLiteral("builtin");
     QString m_themeMode = QStringLiteral("system");
     QString m_matugenColorsPath = QString();
     bool m_showWindowControls = true;
-    bool m_windowControlsOnRight = false;
-    QString m_statsSource = QStringLiteral("local");
-    QString m_statsFmUsername;
-    bool m_trackListening = true;
 #ifdef Q_OS_WIN
     bool m_nativeTitleBar = false;
 #else
     bool m_nativeTitleBar = true;
 #endif
     bool m_trayIcon = true;
-    double m_zoom = 1.0;
-    bool m_discordEnabled = false;
-    QString m_discordApplicationId;
-    QString m_language = QStringLiteral("system");
-    bool m_loggingEnabled = false;
-    bool m_revertedDisabledLanguage = false;
+    bool m_onlineLyrics = true;
+    bool m_onlineArtistImages = true;
+    QString m_discogsToken;
+    bool m_discordPresence = true;
+    QString m_discordClientId;
 };
 
-} // namespace swiftify
+} // namespace swifty

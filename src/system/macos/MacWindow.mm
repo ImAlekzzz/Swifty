@@ -28,7 +28,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import <objc/message.h>
 
-Q_LOGGING_CATEGORY(lcMacWindow, "swiftify.window")
+Q_LOGGING_CATEGORY(lcMacWindow, "swifty.window")
 
 /// a window's colour space, as its qt view reports it: whatever the window's
 /// own is, with that one's profile kept until the window changes colour
@@ -40,11 +40,11 @@ Q_LOGGING_CATEGORY(lcMacWindow, "swiftify.window")
 /// kilobytes, its curves 1024 points each) was a fifth of the main thread's
 /// time a frame. the layer takes its colour space from CGColorSpace, which
 /// is still the window's own.
-@interface SwiftifyWindowColorSpace : NSColorSpace
+@interface SwiftyWindowColorSpace : NSColorSpace
 - (instancetype)initForWindow:(NSWindow *)window;
 @end
 
-@implementation SwiftifyWindowColorSpace {
+@implementation SwiftyWindowColorSpace {
     __weak NSWindow *_window;
     NSColorSpace *_source;
     NSData *_profile;
@@ -84,7 +84,7 @@ Q_LOGGING_CATEGORY(lcMacWindow, "swiftify.window")
 
 @end
 
-namespace swiftify::macos {
+namespace swifty::macos {
 
 namespace {
 
@@ -153,8 +153,8 @@ bool holdColorSpace(QWindow *window)
     if (!frame || !frame.colorSpace || ![view respondsToSelector:@selector(setColorSpace:)]) {
         return false;
     }
-    SwiftifyWindowColorSpace *held = [[SwiftifyWindowColorSpace alloc] initForWindow:frame];
-    if (![held isKindOfClass:[SwiftifyWindowColorSpace class]]) {
+    SwiftyWindowColorSpace *held = [[SwiftyWindowColorSpace alloc] initForWindow:frame];
+    if (![held isKindOfClass:[SwiftyWindowColorSpace class]]) {
         return false;
     }
     reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend)(view, @selector(setColorSpace:), held);
@@ -170,4 +170,4 @@ bool limitDrawables(QWindow *window)
     return found;
 }
 
-} // namespace swiftify::macos
+} // namespace swifty::macos

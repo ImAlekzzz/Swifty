@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the play button wherever music starts: a soft five-bump cookie while
 // paused that springs into a nine-scallop one, turning, while music plays.
@@ -34,7 +35,7 @@ ShapeButton {
     morphTo: "cookie9"
     morphed: playing
     spinRate: 25
-    tooltip: playing ? qsTr("Pause") : qsTr("Play")
+    tooltip: playing ? "Pause" : "Play"
 
     onPlayingChanged: if (!Appearance.performanceMode) pop.restart()
     // starting music throws out a little burst of cookies

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,13 +19,18 @@
 
 #include "library/LocalLibrary.h"
 
+#include "core/Diagnostics.h"
+
 #include "app/Paths.h"
 #include "app/Settings.h"
 
-#include <swiftify_core.h>
+#include <swifty_core.h>
 
 #include <QCollator>
+#include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QThread>
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -32,6 +38,9 @@
 #include <QLoggingCategory>
 #include <QQmlEngine>
 #include <QSaveFile>
+#include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QSet>
 #include <QThreadPool>
 #include <QUuid>
@@ -41,20 +50,21 @@
 #include <cstdint>
 #include <utility>
 
-namespace swiftify {
+namespace swifty {
 
-Q_LOGGING_CATEGORY(lcLocal, "swiftify.local")
+Q_LOGGING_CATEGORY(lcLocal, "swifty.local")
 
 namespace {
 
 LocalLibrary *s_instance = nullptr;
 
 const QString kSourcesKey = QStringLiteral("localMusicSources");
-constexpr int kCacheVersion = 1;
+// 2: songs carry their genre, which a cache of version 1 lacks
+constexpr int kCacheVersion = 2;
 constexpr int kPlaylistsVersion = 1;
 const QString kLocalPrefix = QStringLiteral("local:");
 
-/// what the core's decoder plays (spotify-core's local::AUDIO_EXTENSIONS)
+/// what the core's decoder plays (audio-core's local::AUDIO_EXTENSIONS)
 const QSet<QString> kMusicExtensions {
     QStringLiteral("mp3"), QStringLiteral("flac"), QStringLiteral("ogg"), QStringLiteral("oga"),
     QStringLiteral("m4a"), QStringLiteral("mp4"), QStringLiteral("aac"), QStringLiteral("alac"),
@@ -64,16 +74,16 @@ const QSet<QString> kMusicExtensions {
 QJsonObject readTags(const QString &path, const QString &artworkDirectory)
 {
     char *error = nullptr;
-    char *json = swiftify_read_local_tags(path.toUtf8().constData(), artworkDirectory.toUtf8().constData(), &error);
+    char *json = swifty_read_local_tags(path.toUtf8().constData(), artworkDirectory.toUtf8().constData(), &error);
     if (!json) {
         if (error) {
             qCDebug(lcLocal).noquote() << "skipping" << path << ':' << QString::fromUtf8(error);
-            swiftify_string_free(error);
+            swifty_string_free(error);
         }
         return {};
     }
     const QByteArray bytes(json);
-    swiftify_string_free(json);
+    swifty_string_free(json);
     return QJsonDocument::fromJson(bytes).object();
 }
 
@@ -100,11 +110,14 @@ LocalLibrary::LocalLibrary(Settings *settings, QObject *parent, const QString &s
     }
     const QString storage = storageDirectory.isEmpty() ? paths::dataDirectory() : storageDirectory;
     QDir().mkpath(storage);
-    m_cachePath = storage + QStringLiteral("/local-files.json");
+    m_cachePath = storage + QStringLiteral("/local-files.db");
+    m_legacyCachePath = storage + QStringLiteral("/local-files.json");
     // a playlist's cover is the person's own, and cannot be taken out again
     m_playlistsPath = storage + QStringLiteral("/local-playlists.json");
+    m_databasePath = storage + QStringLiteral("/local-playlists.db");
+    m_databaseName = QStringLiteral("swifty-playlists-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_coverDirectory = storage + QStringLiteral("/local-playlist-covers");
-    // the playlists' own copies of their tracks: the person's, kept as data
+    // copies of tracks that older versions made for playlists. nothing is copied now
     m_trackStore = storage + QStringLiteral("/local-playlist-tracks");
     m_playlists = new PlaylistListModel(this);
     // covers taken out of files can always be taken out again
@@ -112,27 +125,29 @@ LocalLibrary::LocalLibrary(Settings *settings, QObject *parent, const QString &s
         + QStringLiteral("/local-artwork");
 
     m_sources = m_settings->value(kSourcesKey).toStringList();
-    m_playlistsReadable = loadPlaylists();
-    loadCache();
-    if (m_playlistsReadable) {
-        sweepStore();
-    } else {
-        // what the copies belong to is in there: nothing of the store goes,
-        // and the list is left as it is, kept aside once more besides
-        const QString aside = m_playlistsPath + QStringLiteral(".unreadable");
-        if (!QFileInfo::exists(aside)) {
-            QFile::copy(m_playlistsPath, aside);
-        }
+    if (openDatabase()) {
+        importLegacyJson();
     }
+    loadPlaylists();
+    moveBackToOriginals();
+    sweepStore();
     publishPlaylists();
-    adoptOutsideTracks();
+    // the cache is read on another thread: a search asked for now starts when it is in
     if (!m_sources.isEmpty() || QFileInfo::exists(m_trackStore)) {
-        rescan();
+        m_rescanQueued = true;
     }
+    startLoadingCache();
 }
 
 LocalLibrary::~LocalLibrary()
 {
+    {
+        QSqlDatabase database = QSqlDatabase::database(m_databaseName, false);
+        if (database.isValid()) {
+            database.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(m_databaseName);
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -222,8 +237,29 @@ void LocalLibrary::setScanning(bool scanning)
     }
 }
 
+void LocalLibrary::rescanIfStale()
+{
+    constexpr qint64 kStaleAfterMs = 5 * 60 * 1000;
+    if (m_scanning || scanSources().isEmpty()) {
+        diagnostic("library", QStringLiteral("back in the window; not searching (%1)").arg(m_scanning ? QStringLiteral("already searching") : QStringLiteral("no folders")));
+        return;
+    }
+    const qint64 sinceMs = QDateTime::currentMSecsSinceEpoch() - m_lastScanAtMs;
+    if (sinceMs < kStaleAfterMs) {
+        diagnostic("library", QStringLiteral("back in the window; the last search was %1 s ago, so not yet").arg(sinceMs / 1000));
+        return;
+    }
+    diagnostic("library", QStringLiteral("back in the window; searching the folders again"));
+    rescan();
+}
+
 void LocalLibrary::rescan()
 {
+    if (!m_cacheLoaded) {
+        // what was found last time is still being read: the search starts when it is in
+        m_rescanQueued = true;
+        return;
+    }
     if (m_scanning) {
         // one search at a time; this one goes again once it is done
         m_rescanQueued = true;
@@ -267,6 +303,7 @@ void LocalLibrary::rescan()
             m_songs->setSongs(songs);
             publishPlaylists();
             setScanning(false);
+            m_lastScanAtMs = QDateTime::currentMSecsSinceEpoch();
             emit scanned(m_songs->count());
             if (std::exchange(m_rescanQueued, false)) {
                 rescan();
@@ -274,30 +311,136 @@ void LocalLibrary::rescan()
         });
 }
 
-void LocalLibrary::loadCache()
+namespace {
+
+/// the cache database of what the searches found: a row for each music file, with its
+/// tags as json. its connection belongs to the thread that made it, and is let go with it
+struct CacheConnection {
+    explicit CacheConnection(const QString &path)
+        : name(QStringLiteral("swifty-cache-") + QUuid::createUuid().toString(QUuid::WithoutBraces))
+    {
+        QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), name);
+        database.setDatabaseName(path);
+        if (!database.open()) {
+            qCWarning(lcLocal).noquote() << "could not open the cache" << path << ':' << database.lastError().text();
+            return;
+        }
+        QSqlQuery query(database);
+        // a cache of another version is not read: it is made again by the next search
+        query.exec(QStringLiteral("PRAGMA user_version"));
+        const int version = query.next() ? query.value(0).toInt() : 0;
+        query.finish();
+        if (version != kCacheVersion) {
+            ok = query.exec(QStringLiteral("DROP TABLE IF EXISTS files"));
+        } else {
+            ok = true;
+        }
+        ok = ok
+            && query.exec(QStringLiteral("CREATE TABLE IF NOT EXISTS files ("
+                                         "path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL, "
+                                         "tags TEXT NOT NULL) WITHOUT ROWID"));
+        if (ok && version != kCacheVersion) {
+            ok = query.exec(QStringLiteral("PRAGMA user_version = %1").arg(kCacheVersion));
+        }
+        if (!ok) {
+            qCWarning(lcLocal).noquote() << "could not set up the cache:" << query.lastError().text();
+        }
+    }
+    ~CacheConnection()
+    {
+        {
+            QSqlDatabase database = QSqlDatabase::database(name, false);
+            if (database.isValid()) {
+                database.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(name);
+    }
+    CacheConnection(const CacheConnection &) = delete;
+    CacheConnection &operator=(const CacheConnection &) = delete;
+
+    QSqlDatabase database() const { return QSqlDatabase::database(name, false); }
+
+    QString name;
+    bool ok = false;
+};
+
+} // namespace
+
+QHash<QString, LocalLibrary::Entry> LocalLibrary::loadEntries(const QString &cachePath, const QString &legacyCachePath)
 {
-    QFile file(m_cachePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        return;
+    QHash<QString, Entry> entries;
+    CacheConnection connection(cachePath);
+    if (!connection.ok) {
+        return entries;
     }
-    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
-    if (root.value(QStringLiteral("version")).toInt() != kCacheVersion) {
-        return;
+    QSqlDatabase database = connection.database();
+    QSqlQuery query(database);
+
+    // a cache kept as json by an earlier version moves in, once
+    if (QFileInfo::exists(legacyCachePath)) {
+        query.exec(QStringLiteral("SELECT 1 FROM files LIMIT 1"));
+        const bool empty = !query.next();
+        query.finish();
+        QFile file(legacyCachePath);
+        if (empty && file.open(QIODevice::ReadOnly)) {
+            const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+            file.close();
+            if (root.value(QStringLiteral("version")).toInt() == kCacheVersion && database.transaction()) {
+                QSqlQuery insert(database);
+                insert.prepare(QStringLiteral("INSERT OR REPLACE INTO files (path, size, modified, tags) VALUES (?, ?, ?, ?)"));
+                const QJsonObject files = root.value(QStringLiteral("files")).toObject();
+                bool ok = true;
+                for (auto it = files.begin(); ok && it != files.end(); ++it) {
+                    const QJsonObject entry = it.value().toObject();
+                    insert.addBindValue(it.key());
+                    insert.addBindValue(entry.value(QStringLiteral("size")).toInteger());
+                    insert.addBindValue(entry.value(QStringLiteral("modified")).toInteger());
+                    insert.addBindValue(QString::fromUtf8(
+                        QJsonDocument(entry.value(QStringLiteral("tags")).toObject()).toJson(QJsonDocument::Compact)));
+                    ok = insert.exec();
+                }
+                if (!ok || !database.commit()) {
+                    database.rollback();
+                }
+            }
+        }
+        // set aside either way: it is only a cache, and is not read twice
+        QFile::remove(legacyCachePath + QStringLiteral(".imported"));
+        QFile::rename(legacyCachePath, legacyCachePath + QStringLiteral(".imported"));
     }
-    const QJsonObject files = root.value(QStringLiteral("files")).toObject();
-    QList<std::pair<QString, QJsonObject>> known;
-    for (auto it = files.begin(); it != files.end(); ++it) {
-        const QJsonObject entry = it.value().toObject();
-        m_entries.insert(it.key(), {entry.value(QStringLiteral("size")).toInteger(),
-                                    entry.value(QStringLiteral("modified")).toInteger(),
-                                    entry.value(QStringLiteral("tags")).toObject()});
+
+    if (query.exec(QStringLiteral("SELECT path, size, modified, tags FROM files"))) {
+        while (query.next()) {
+            entries.insert(query.value(0).toString(),
+                           {query.value(1).toLongLong(), query.value(2).toLongLong(),
+                            QJsonDocument::fromJson(query.value(3).toString().toUtf8()).object()});
+        }
     }
+    return entries;
+}
+
+void LocalLibrary::startLoadingCache()
+{
+    QtConcurrent::run(QThreadPool::globalInstance(), &LocalLibrary::loadEntries, m_cachePath, m_legacyCachePath)
+        .then(this, [this](const QHash<QString, Entry> &loaded) {
+            m_entries = loaded;
+            applyCache();
+            m_cacheLoaded = true;
+            if (std::exchange(m_rescanQueued, false)) {
+                rescan();
+            }
+        });
+}
+
+void LocalLibrary::applyCache()
+{
     // what was there last time shows at once; the search that follows
     // brings it up to date
     QHash<QString, Entry> shown;
     for (auto it = m_entries.cbegin(); it != m_entries.cend(); ++it) {
         if (isKeptCopy(it.key())) {
-            if (!it->tags.isEmpty()) {
+            if (!it->tags.isEmpty() && QFileInfo::exists(it.key())) {
                 const Song song = songFor(it.key(), it->tags);
                 m_storeSongs.insert(song.uri, song);
             }
@@ -307,6 +450,7 @@ void LocalLibrary::loadCache()
         }
     }
     m_songs->setSongs(songsFrom(shown));
+    publishPlaylists();
 }
 
 QStringList LocalLibrary::scanSources() const
@@ -383,6 +527,8 @@ QList<Song> LocalLibrary::songsFrom(const QHash<QString, Entry> &entries)
 LocalLibrary::ScanResult LocalLibrary::scan(const QStringList &sources, QHash<QString, Entry> known,
                                             const QString &artworkDirectory, const QString &cachePath)
 {
+    QElapsedTimer clock;
+    clock.start();
     QStringList files;
     QSet<QString> seen;
     const auto take = [&](const QFileInfo &info) {
@@ -407,7 +553,10 @@ LocalLibrary::ScanResult LocalLibrary::scan(const QStringList &sources, QHash<QS
         }
     }
 
+    // a file that has not changed keeps what the last search found in it
     QHash<QString, Entry> entries;
+    entries.reserve(files.size());
+    QStringList toRead;
     for (const QString &path : files) {
         const QFileInfo info(path);
         Entry entry {info.size(), info.lastModified().toMSecsSinceEpoch(), {}};
@@ -415,31 +564,83 @@ LocalLibrary::ScanResult LocalLibrary::scan(const QStringList &sources, QHash<QS
         if (cached != known.cend() && cached->size == entry.size && cached->modified == entry.modified) {
             entry.tags = cached->tags;
         } else {
-            entry.tags = readTags(path, artworkDirectory);
-            // an unreadable file is remembered as such, and not tried again
-            // until it changes
+            toRead.append(path);
         }
         entries.insert(path, entry);
+    }
+    if (!toRead.isEmpty()) {
+        // the tags and cover of every new or changed file are read side by side:
+        // on a first search of a big library that is all the time there is. one
+        // core is left for the window and the sound, and the work is the last to
+        // be given one. the covers are written aside and moved into place, so
+        // two tracks of an album can race
+        QThreadPool pool;
+        pool.setMaxThreadCount(std::max(1, QThread::idealThreadCount() - 1));
+        pool.setThreadPriority(QThread::LowPriority);
+        const QList<QJsonObject> read = QtConcurrent::blockingMapped(&pool, toRead, [&artworkDirectory](const QString &path) {
+            return readTags(path, artworkDirectory);
+        });
+        // an unreadable file is remembered as such, and not tried again until it changes
+        for (qsizetype index = 0; index < toRead.size(); ++index) {
+            entries[toRead.at(index)].tags = read.at(index);
+        }
     }
 
     ScanResult result;
     result.songs = songsFrom(entries);
     result.entries = entries;
 
-    // kept for next time, written aside and moved into place
-    QJsonObject stored;
-    for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
-        stored.insert(it.key(), QJsonObject {{QStringLiteral("size"), it->size},
-                                             {QStringLiteral("modified"), it->modified},
-                                             {QStringLiteral("tags"), it->tags}});
+    // kept for next time: the files that were read go in, and the ones that went
+    // come out. when nothing was read and no file came or went, nothing is written:
+    // a search when the window comes back should not write for nothing
+    QStringList removed;
+    for (auto it = known.cbegin(); it != known.cend(); ++it) {
+        if (!entries.contains(it.key())) {
+            removed.append(it.key());
+        }
     }
-    QSaveFile file(cachePath);
-    if (file.open(QIODevice::WriteOnly)) {
-        file.write(QJsonDocument(QJsonObject {{QStringLiteral("version"), kCacheVersion},
-                                              {QStringLiteral("files"), stored}})
-                       .toJson(QJsonDocument::Compact));
-        file.commit();
+    if (toRead.isEmpty() && removed.isEmpty()) {
+        diagnostic("library", QStringLiteral("searched %1 files, nothing changed, in %2 ms").arg(files.size()).arg(clock.elapsed()));
+        return result;
     }
+    {
+        CacheConnection connection(cachePath);
+        if (connection.ok) {
+            QSqlDatabase database = connection.database();
+            bool ok = database.transaction();
+            QSqlQuery query(database);
+            if (ok && !removed.isEmpty()) {
+                QVariantList paths(removed.cbegin(), removed.cend());
+                ok = query.prepare(QStringLiteral("DELETE FROM files WHERE path = ?"));
+                query.addBindValue(paths);
+                ok = ok && query.execBatch();
+            }
+            if (ok && !toRead.isEmpty()) {
+                QVariantList paths;
+                QVariantList sizes;
+                QVariantList modifieds;
+                QVariantList tagsList;
+                for (const QString &path : std::as_const(toRead)) {
+                    const Entry &entry = entries[path];
+                    paths.append(path);
+                    sizes.append(entry.size);
+                    modifieds.append(entry.modified);
+                    tagsList.append(QString::fromUtf8(QJsonDocument(entry.tags).toJson(QJsonDocument::Compact)));
+                }
+                ok = query.prepare(QStringLiteral("INSERT OR REPLACE INTO files (path, size, modified, tags) VALUES (?, ?, ?, ?)"));
+                query.addBindValue(paths);
+                query.addBindValue(sizes);
+                query.addBindValue(modifieds);
+                query.addBindValue(tagsList);
+                ok = ok && query.execBatch();
+            }
+            if (!ok || !database.commit()) {
+                qCWarning(lcLocal).noquote() << "could not keep what the search found:" << query.lastError().text();
+                database.rollback();
+            }
+        }
+    }
+    diagnostic("library", QStringLiteral("searched %1 files, read %2, in %3 ms").arg(files.size()).arg(toRead.size()).arg(clock.elapsed()));
     return result;
 }
 
@@ -463,6 +664,7 @@ Song LocalLibrary::songFor(const QString &path, const QJsonObject &tags)
     if (song.albumName.isEmpty()) {
         song.albumName = info.dir().dirName();
     }
+    song.genre = text(tags, "genre");
     song.durationMs = tags.value(QStringLiteral("durationMs")).toInt();
     const QString artwork = text(tags, "artworkPath");
     if (!artwork.isEmpty()) {
@@ -524,14 +726,14 @@ void LocalLibrary::editTags(const QString &uri, const QVariantMap &fields, const
     const QByteArray json = QJsonDocument(edits).toJson(QJsonDocument::Compact);
     // written away from the window: a large file is copied whole
     QtConcurrent::run(QThreadPool::globalInstance(), [path, json, artworkJpeg]() -> QString {
-        char *error = swiftify_write_local_tags(path.toUtf8().constData(), json.constData(),
+        char *error = swifty_write_local_tags(path.toUtf8().constData(), json.constData(),
                                                 reinterpret_cast<const uint8_t *>(artworkJpeg.constData()),
                                                 size_t(artworkJpeg.size()));
         if (!error) {
             return {};
         }
         const QString message = QString::fromUtf8(error);
-        swiftify_string_free(error);
+        swifty_string_free(error);
         return message;
     }).then(this, [this, uri, path](const QString &error) {
         if (!error.isEmpty()) {
@@ -548,34 +750,145 @@ void LocalLibrary::editTags(const QString &uri, const QVariantMap &fields, const
 
 // --- playlists ---------------------------------------------------------------------
 
-bool LocalLibrary::loadPlaylists()
+size_t LocalLibrary::contentHash(const StoredPlaylist &stored)
+{
+    return qHashMulti(0, stored.id, stored.name, stored.description, stored.cover, stored.uris);
+}
+
+size_t LocalLibrary::copiesHash(const QHash<QString, Origin> &copies)
+{
+    // the same whatever order they are held in
+    size_t total = 0;
+    for (auto it = copies.cbegin(); it != copies.cend(); ++it) {
+        total += qHashMulti(0, it.key(), it->source, it->size, it->modified);
+    }
+    return total;
+}
+
+bool LocalLibrary::openDatabase()
+{
+    if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE"))) {
+        qCWarning(lcLocal).noquote()
+            << "Qt's SQLite driver (QSQLITE) is not installed, so the playlists are kept in" << m_playlistsPath
+            << "instead. on Debian and Ubuntu it is the package libqt6sql6-sqlite. available drivers:"
+            << QSqlDatabase::drivers();
+        return false;
+    }
+    QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_databaseName);
+    database.setDatabaseName(m_databasePath);
+    if (!database.open()) {
+        qCWarning(lcLocal).noquote() << "could not open the playlists database" << m_databasePath << ':'
+                                     << database.lastError().text();
+        return false;
+    }
+    QSqlQuery query(database);
+    const QStringList statements {
+        QStringLiteral("PRAGMA foreign_keys = ON"),
+        QStringLiteral("PRAGMA journal_mode = WAL"),
+        QStringLiteral("PRAGMA synchronous = NORMAL"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS playlists ("
+                       "id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', "
+                       "cover TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL)"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS playlist_songs ("
+                       "playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, "
+                       "position INTEGER NOT NULL, uri TEXT NOT NULL, PRIMARY KEY (playlist_id, position))"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS copies ("
+                       "copy TEXT PRIMARY KEY, source TEXT NOT NULL, size INTEGER NOT NULL, modified INTEGER NOT NULL)"),
+        QStringLiteral("PRAGMA user_version = 1"),
+    };
+    for (const QString &statement : statements) {
+        if (!query.exec(statement)) {
+            qCWarning(lcLocal).noquote() << "could not set up the playlists database:" << query.lastError().text();
+            database.close();
+            return false;
+        }
+    }
+    return true;
+}
+
+/// playlists kept in local-playlists.json by an earlier version move into the
+/// database, once: the file is set aside after, and ones already in the
+/// database are left as they are
+void LocalLibrary::importLegacyJson()
 {
     QFile file(m_playlistsPath);
-    if (!file.exists()) {
-        return true;
+    if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+        return;
     }
-    if (!file.open(QIODevice::ReadOnly)) {
-        qCWarning(lcLocal).noquote() << "could not read the playlists in" << m_playlistsPath << ':' << file.errorString();
-        return false;
-    }
-    QJsonParseError error;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
-    if (error.error != QJsonParseError::NoError || !document.isObject()) {
-        qCWarning(lcLocal).noquote() << "could not read the playlists in" << m_playlistsPath << ':' << error.errorString();
-        return false;
-    }
-    const QJsonObject root = document.object();
+    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
     if (root.value(QStringLiteral("version")).toInt() != kPlaylistsVersion) {
         qCWarning(lcLocal) << "playlists kept in a version this app does not read:" << m_playlistsPath;
-        return false;
+        return;
+    }
+    QSqlDatabase database = QSqlDatabase::database(m_databaseName);
+    if (!database.transaction()) {
+        return;
+    }
+    QSqlQuery query(database);
+    query.exec(QStringLiteral("SELECT COALESCE(MAX(position), -1) FROM playlists"));
+    int position = query.next() ? query.value(0).toInt() : -1;
+    bool ok = true;
+    for (const QJsonValue &value : root.value(QStringLiteral("playlists")).toArray()) {
+        const QJsonObject object = value.toObject();
+        const QString id = object.value(QStringLiteral("id")).toString();
+        if (!id.startsWith(kLocalPrefix)) {
+            continue;
+        }
+        query.prepare(QStringLiteral("INSERT OR IGNORE INTO playlists (id, name, description, cover, position) "
+                                     "VALUES (?, ?, ?, ?, ?)"));
+        query.addBindValue(id);
+        query.addBindValue(object.value(QStringLiteral("name")).toString());
+        query.addBindValue(object.value(QStringLiteral("description")).toString());
+        query.addBindValue(object.value(QStringLiteral("cover")).toString());
+        query.addBindValue(++position);
+        ok = ok && query.exec();
+        if (!ok || query.numRowsAffected() < 1) {
+            continue;
+        }
+        int row = 0;
+        for (const QJsonValue &uri : object.value(QStringLiteral("songs")).toArray()) {
+            query.prepare(QStringLiteral("INSERT INTO playlist_songs (playlist_id, position, uri) VALUES (?, ?, ?)"));
+            query.addBindValue(id);
+            query.addBindValue(row++);
+            query.addBindValue(uri.toString());
+            ok = ok && query.exec();
+        }
+    }
+    for (const QJsonValue &value : root.value(QStringLiteral("copies")).toArray()) {
+        const QJsonObject object = value.toObject();
+        query.prepare(QStringLiteral("INSERT OR IGNORE INTO copies (copy, source, size, modified) VALUES (?, ?, ?, ?)"));
+        query.addBindValue(object.value(QStringLiteral("copy")).toString());
+        query.addBindValue(object.value(QStringLiteral("source")).toString());
+        query.addBindValue(object.value(QStringLiteral("size")).toInteger());
+        query.addBindValue(object.value(QStringLiteral("modified")).toInteger());
+        ok = ok && query.exec();
+    }
+    if (!ok || !database.commit()) {
+        qCWarning(lcLocal).noquote() << "could not move the playlists into the database:" << query.lastError().text();
+        database.rollback();
+        return;
+    }
+    // kept beside the database rather than deleted, in case anything is wrong
+    QFile::remove(m_playlistsPath + QStringLiteral(".imported"));
+    file.rename(m_playlistsPath + QStringLiteral(".imported"));
+}
+
+void LocalLibrary::readJsonPlaylists()
+{
+    QFile file(m_playlistsPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return;
+    }
+    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    if (root.value(QStringLiteral("version")).toInt() != kPlaylistsVersion) {
+        return;
     }
     for (const QJsonValue &value : root.value(QStringLiteral("playlists")).toArray()) {
         const QJsonObject object = value.toObject();
-        StoredPlaylist stored {object.value(QStringLiteral("id")).toString(),
-                               object.value(QStringLiteral("name")).toString(),
+        StoredPlaylist stored {object.value(QStringLiteral("id")).toString(), object.value(QStringLiteral("name")).toString(),
                                object.value(QStringLiteral("description")).toString(),
-                               object.value(QStringLiteral("cover")).toString(),
-                               {}};
+                               object.value(QStringLiteral("cover")).toString(), {}};
         if (!stored.id.startsWith(kLocalPrefix) || findPlaylist(stored.id)) {
             continue;
         }
@@ -588,21 +901,14 @@ bool LocalLibrary::loadPlaylists()
         const QJsonObject object = value.toObject();
         const QString copy = object.value(QStringLiteral("copy")).toString();
         if (isKeptCopy(copy)) {
-            m_copies.insert(copy, {object.value(QStringLiteral("source")).toString(),
-                                   object.value(QStringLiteral("size")).toInteger(),
+            m_copies.insert(copy, {object.value(QStringLiteral("source")).toString(), object.value(QStringLiteral("size")).toInteger(),
                                    object.value(QStringLiteral("modified")).toInteger()});
         }
     }
-    return true;
 }
 
-void LocalLibrary::savePlaylists() const
+void LocalLibrary::writeJsonPlaylists() const
 {
-    if (!m_playlistsReadable) {
-        // writing over a list this app could not read would lose what it holds
-        qCWarning(lcLocal) << "playlists not kept: the list there could not be read:" << m_playlistsPath;
-        return;
-    }
     QJsonArray playlists;
     for (const StoredPlaylist &stored : m_storedPlaylists) {
         playlists.append(QJsonObject {{QStringLiteral("id"), stored.id},
@@ -611,11 +917,6 @@ void LocalLibrary::savePlaylists() const
                                       {QStringLiteral("cover"), stored.cover},
                                       {QStringLiteral("songs"), QJsonArray::fromStringList(stored.uris)}});
     }
-    QSaveFile file(m_playlistsPath);
-    if (!file.open(QIODevice::WriteOnly)) {
-        qCWarning(lcLocal).noquote() << "could not keep the playlists in" << m_playlistsPath << ':' << file.errorString();
-        return;
-    }
     QJsonArray copies;
     for (auto it = m_copies.cbegin(); it != m_copies.cend(); ++it) {
         copies.append(QJsonObject {{QStringLiteral("copy"), it.key()},
@@ -623,13 +924,176 @@ void LocalLibrary::savePlaylists() const
                                    {QStringLiteral("size"), it->size},
                                    {QStringLiteral("modified"), it->modified}});
     }
-    file.write(QJsonDocument(QJsonObject {{QStringLiteral("version"), kPlaylistsVersion},
-                                          {QStringLiteral("playlists"), playlists},
-                                          {QStringLiteral("copies"), copies}})
-                   .toJson(QJsonDocument::Compact));
-    if (!file.commit()) {
+    QSaveFile file(m_playlistsPath);
+    if (!file.open(QIODevice::WriteOnly)
+        || file.write(QJsonDocument(QJsonObject {{QStringLiteral("version"), kPlaylistsVersion},
+                                                 {QStringLiteral("playlists"), playlists},
+                                                 {QStringLiteral("copies"), copies}})
+                          .toJson(QJsonDocument::Compact))
+            < 0
+        || !file.commit()) {
         qCWarning(lcLocal).noquote() << "could not keep the playlists in" << m_playlistsPath << ':' << file.errorString();
     }
+}
+
+void LocalLibrary::loadPlaylists()
+{
+    QSqlDatabase database = QSqlDatabase::database(m_databaseName, false);
+    if (!database.isOpen()) {
+        readJsonPlaylists();
+        return;
+    }
+    QSqlQuery query(database);
+    if (query.exec(QStringLiteral("SELECT id, name, description, cover FROM playlists ORDER BY position"))) {
+        while (query.next()) {
+            StoredPlaylist stored {query.value(0).toString(), query.value(1).toString(), query.value(2).toString(),
+                                   query.value(3).toString(), {}};
+            if (!stored.id.startsWith(kLocalPrefix) || findPlaylist(stored.id)) {
+                continue;
+            }
+            m_storedPlaylists.append(stored);
+        }
+    }
+    QSqlQuery songs(database);
+    if (songs.exec(QStringLiteral("SELECT playlist_id, uri FROM playlist_songs ORDER BY playlist_id, position"))) {
+        while (songs.next()) {
+            if (StoredPlaylist *stored = findPlaylist(songs.value(0).toString())) {
+                stored->uris.append(songs.value(1).toString());
+            }
+        }
+    }
+    QSqlQuery copies(database);
+    if (copies.exec(QStringLiteral("SELECT copy, source, size, modified FROM copies"))) {
+        while (copies.next()) {
+            const QString copy = copies.value(0).toString();
+            if (isKeptCopy(copy)) {
+                m_copies.insert(copy, {copies.value(1).toString(), copies.value(2).toLongLong(),
+                                       copies.value(3).toLongLong()});
+            }
+        }
+    }
+    // what the database holds now: a save writes only what differs from it
+    m_savedPlaylists.clear();
+    m_savedOrder.clear();
+    for (const StoredPlaylist &stored : std::as_const(m_storedPlaylists)) {
+        m_savedPlaylists.insert(stored.id, contentHash(stored));
+        m_savedOrder.append(stored.id);
+    }
+    m_savedCopies = copiesHash(m_copies);
+    m_copiesSaved = true;
+}
+
+void LocalLibrary::savePlaylists() const
+{
+    QSqlDatabase database = QSqlDatabase::database(m_databaseName, false);
+    if (!database.isOpen()) {
+        writeJsonPlaylists();
+        return;
+    }
+    // only what differs from what the database holds is written, and all of it
+    // in one transaction: it is all there afterwards, or none of it was touched
+    bool ok = database.transaction();
+    QSqlQuery query(database);
+    QStringList order;
+    QSet<QString> present;
+    for (const StoredPlaylist &stored : m_storedPlaylists) {
+        order.append(stored.id);
+        present.insert(stored.id);
+    }
+    QHash<QString, size_t> state;
+    for (const QString &id : m_savedPlaylists.keys()) {
+        if (!present.contains(id) && ok) {
+            ok = query.prepare(QStringLiteral("DELETE FROM playlist_songs WHERE playlist_id = ?"));
+            query.addBindValue(id);
+            ok = ok && query.exec();
+            ok = ok && query.prepare(QStringLiteral("DELETE FROM playlists WHERE id = ?"));
+            query.addBindValue(id);
+            ok = ok && query.exec();
+        }
+    }
+    int position = 0;
+    for (const StoredPlaylist &stored : m_storedPlaylists) {
+        const size_t hash = contentHash(stored);
+        state.insert(stored.id, hash);
+        if (ok && m_savedPlaylists.value(stored.id, hash + 1) != hash) {
+            ok = query.prepare(QStringLiteral(
+                "INSERT INTO playlists (id, name, description, cover, position) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, "
+                "cover = excluded.cover, position = excluded.position"));
+            query.addBindValue(stored.id);
+            query.addBindValue(stored.name);
+            query.addBindValue(stored.description);
+            query.addBindValue(stored.cover);
+            query.addBindValue(position);
+            ok = ok && query.exec();
+            ok = ok && query.prepare(QStringLiteral("DELETE FROM playlist_songs WHERE playlist_id = ?"));
+            query.addBindValue(stored.id);
+            ok = ok && query.exec();
+            if (ok && !stored.uris.isEmpty()) {
+                QVariantList ids;
+                QVariantList positions;
+                QVariantList uris;
+                for (int row = 0; row < stored.uris.size(); ++row) {
+                    ids.append(stored.id);
+                    positions.append(row);
+                    uris.append(stored.uris.at(row));
+                }
+                ok = query.prepare(QStringLiteral("INSERT INTO playlist_songs (playlist_id, position, uri) VALUES (?, ?, ?)"));
+                query.addBindValue(ids);
+                query.addBindValue(positions);
+                query.addBindValue(uris);
+                ok = ok && query.execBatch();
+            }
+        }
+        ++position;
+    }
+    if (ok && order != m_savedOrder) {
+        // a playlist made or taken away moves the others
+        QVariantList positions;
+        QVariantList ids;
+        for (int index = 0; index < order.size(); ++index) {
+            positions.append(index);
+            ids.append(order.at(index));
+        }
+        if (!ids.isEmpty()) {
+            ok = query.prepare(QStringLiteral("UPDATE playlists SET position = ? WHERE id = ?"));
+            query.addBindValue(positions);
+            query.addBindValue(ids);
+            ok = ok && query.execBatch();
+        }
+    }
+    const size_t copies = copiesHash(m_copies);
+    const bool copiesChanged = !m_copiesSaved || copies != m_savedCopies;
+    if (ok && copiesChanged) {
+        ok = query.exec(QStringLiteral("DELETE FROM copies"));
+        if (ok && !m_copies.isEmpty()) {
+            QVariantList names;
+            QVariantList sources;
+            QVariantList sizes;
+            QVariantList modifieds;
+            for (auto it = m_copies.cbegin(); it != m_copies.cend(); ++it) {
+                names.append(it.key());
+                sources.append(it->source);
+                sizes.append(it->size);
+                modifieds.append(it->modified);
+            }
+            ok = query.prepare(QStringLiteral("INSERT INTO copies (copy, source, size, modified) VALUES (?, ?, ?, ?)"));
+            query.addBindValue(names);
+            query.addBindValue(sources);
+            query.addBindValue(sizes);
+            query.addBindValue(modifieds);
+            ok = ok && query.execBatch();
+        }
+    }
+    if (!ok || !database.commit()) {
+        qCWarning(lcLocal).noquote() << "could not keep the playlists in" << m_databasePath << ':' << query.lastError().text();
+        database.rollback();
+        return;
+    }
+    m_savedPlaylists = state;
+    m_savedOrder = order;
+    m_savedCopies = copies;
+    m_copiesSaved = true;
 }
 
 void LocalLibrary::publishPlaylists()
@@ -695,8 +1159,7 @@ Playlist LocalLibrary::describe(const StoredPlaylist &stored, const SongIndex &i
     if (!stored.cover.isEmpty()) {
         playlist.artworkUrl = QUrl::fromLocalFile(m_coverDirectory + u'/' + stored.cover);
     } else {
-        // the first cover among its songs, as a playlist without one of its
-        // own shows in spotify
+        // the first cover among its songs, for a playlist without one of its own
         for (const Song &song : songs) {
             if (!song.artworkUrl.isEmpty()) {
                 playlist.artworkUrl = song.artworkUrl;
@@ -760,11 +1223,10 @@ Playlist LocalLibrary::createPlaylist(const QString &name, const QString &descri
     if (!coverJpeg.isEmpty()) {
         stored.cover = writeCover(stored, coverJpeg);
     }
-    // newest first, as spotify lists the person's own
+    // newest first
     m_storedPlaylists.prepend(stored);
     savePlaylists();
     publishPlaylists();
-    // the songs it starts with go in once copied
     addSongs(stored.id, songs);
     return playlist(stored.id);
 }
@@ -804,32 +1266,80 @@ bool LocalLibrary::deletePlaylist(const QString &id)
 
 int LocalLibrary::addSongs(const QString &id, const QList<Song> &songs)
 {
-    QStringList paths;
-    for (const Song &song : songs) {
-        if (song.isLocalFile()) {
-            paths.append(song.localPath());
-        }
-    }
-    if (!findPlaylist(id) || paths.isEmpty()) {
+    StoredPlaylist *stored = findPlaylist(id);
+    if (!stored) {
         return 0;
     }
-    keepTracks(id, paths);
-    return int(paths.size());
+    // the playlist holds where each song is, and nothing is copied
+    int added = 0;
+    for (const Song &song : songs) {
+        if (song.isLocalFile()) {
+            stored->uris.append(song.uri);
+            ++added;
+        }
+    }
+    if (added > 0) {
+        savePlaylists();
+        publishPlaylists();
+    }
+    return added;
 }
 
 void LocalLibrary::addFiles(const QString &playlistId, const QList<QUrl> &urls)
 {
+    StoredPlaylist *stored = findPlaylist(playlistId);
+    QList<QUrl> sources;
     QStringList paths;
+    QStringList skipped;
     for (const QUrl &url : urls) {
-        if (url.isLocalFile()) {
-            paths.append(url.toLocalFile());
+        if (!url.isLocalFile()) {
+            continue;
+        }
+        const QFileInfo info(url.toLocalFile());
+        if (info.isFile() && isMusicFile(info.filePath())) {
+            sources.append(url);
+            paths.append(info.canonicalFilePath());
+        } else if (info.isDir()) {
+            // every music file inside, in the order of a listing
+            QStringList inside;
+            QDirIterator files(info.canonicalFilePath(), QDir::Files, QDirIterator::Subdirectories);
+            while (files.hasNext()) {
+                const QString path = files.next();
+                if (isMusicFile(path)) {
+                    inside.append(path);
+                }
+            }
+            QCollator collator;
+            collator.setNumericMode(true);
+            std::sort(inside.begin(), inside.end(), [&](const QString &left, const QString &right) {
+                return collator.compare(left, right) < 0;
+            });
+            if (!inside.isEmpty()) {
+                sources.append(url);
+                paths.append(inside);
+            }
+        } else {
+            skipped.append(info.fileName());
         }
     }
-    if (!findPlaylist(playlistId) || paths.isEmpty()) {
+    if (!stored || paths.isEmpty()) {
         emit tracksAdded(playlistId, 0, QStringLiteral("There was nothing there to add."));
         return;
     }
-    keepTracks(playlistId, paths);
+    // the library knows songs from its folders and files: one from elsewhere joins them
+    addSources(sources);
+    for (const QString &path : std::as_const(paths)) {
+        stored->uris.append(QUrl::fromLocalFile(path).toString());
+    }
+    savePlaylists();
+    publishPlaylists();
+    QString problem;
+    if (skipped.size() == 1) {
+        problem = QStringLiteral("“%1” was not music, so it was left out.").arg(skipped.first());
+    } else if (!skipped.isEmpty()) {
+        problem = QStringLiteral("%1 files were not music, so they were left out.").arg(skipped.size());
+    }
+    emit tracksAdded(playlistId, int(paths.size()), problem);
 }
 
 int LocalLibrary::removeSong(const QString &id, const QString &uri)
@@ -844,230 +1354,35 @@ int LocalLibrary::removeSong(const QString &id, const QString &uri)
     return removed;
 }
 
-// --- the playlists' own copies ---------------------------------------------------------
+// --- copies from older versions --------------------------------------------------------
 
-namespace {
-
-/// the cover kept beside an album's files, by the names read_tags looks for
-const QStringList kFolderCoverNames {QStringLiteral("cover"), QStringLiteral("folder"), QStringLiteral("front"),
-                                     QStringLiteral("album"), QStringLiteral("albumart"), QStringLiteral("artwork")};
-const QStringList kCoverExtensions {QStringLiteral("jpg"), QStringLiteral("jpeg"), QStringLiteral("png"),
-                                    QStringLiteral("webp")};
-
-/// a track's lyrics (a .lrc of its name) and its folder's cover go with it
-void copyCompanions(const QFileInfo &track, const QString &into)
+void LocalLibrary::moveBackToOriginals()
 {
-    const QFileInfoList beside = track.dir().entryInfoList(QDir::Files | QDir::Readable);
-    for (const QFileInfo &file : beside) {
-        const QString suffix = file.suffix().toLower();
-        const bool lyrics = suffix == QLatin1StringView("lrc") && file.completeBaseName() == track.completeBaseName();
-        const bool cover = kCoverExtensions.contains(suffix) && kFolderCoverNames.contains(file.completeBaseName().toLower());
-        if (lyrics || cover) {
-            QFile::copy(file.absoluteFilePath(), into + u'/' + file.fileName());
-        }
-    }
-}
-
-} // namespace
-
-LocalLibrary::KeepResult LocalLibrary::keep(const QStringList &inputs, const QString &store,
-                                            const QString &artworkDirectory, const QHash<QString, Origin> &origins)
-{
-    KeepResult result;
-
-    // a folder gives its music files, in the order of their names
-    QCollator collator;
-    collator.setNumericMode(true);
-    collator.setCaseSensitivity(Qt::CaseInsensitive);
-    QStringList paths;
-    for (const QString &input : inputs) {
-        const QFileInfo info(input);
-        if (info.isDir()) {
-            QStringList found;
-            QDirIterator walk(input, QDir::Files | QDir::Readable | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-            while (walk.hasNext()) {
-                walk.next();
-                if (isMusicFile(walk.filePath())) {
-                    found.append(walk.fileInfo().absoluteFilePath());
-                }
-            }
-            std::sort(found.begin(), found.end(),
-                      [&](const QString &a, const QString &b) { return collator.compare(a, b) < 0; });
-            paths.append(found);
-        } else if (info.isFile() && isMusicFile(input)) {
-            paths.append(info.absoluteFilePath());
-        } else {
-            result.failed.append(info.fileName());
-        }
-    }
-
-    // a file copied before, unchanged since, is not copied again
-    QHash<QString, Origin> known = origins;
-    QHash<QString, QString> bySource;
-    for (auto it = known.cbegin(); it != known.cend(); ++it) {
-        bySource.insert(it->source, it.key());
-    }
-
-    for (const QString &path : paths) {
-        Kept kept;
-        kept.source = path;
-        if (isWithin(path, store)) {
-            kept.uri = QUrl::fromLocalFile(path).toString();
-            result.kept.append(kept);
-            continue;
-        }
-        const QFileInfo info(path);
-        const QString source = info.canonicalFilePath();
-        const qint64 size = info.size();
-        const qint64 modified = info.lastModified().toMSecsSinceEpoch();
-        if (const auto copy = bySource.constFind(source); copy != bySource.cend()) {
-            const Origin origin = known.value(*copy);
-            if (origin.size == size && origin.modified == modified && QFileInfo::exists(*copy)) {
-                kept.uri = QUrl::fromLocalFile(*copy).toString();
-                result.kept.append(kept);
+    bool changed = false;
+    QStringList sources = m_sources;
+    for (StoredPlaylist &stored : m_storedPlaylists) {
+        for (QString &uri : stored.uris) {
+            const QString path = QUrl(uri).toLocalFile();
+            const auto copy = isKeptCopy(path) ? m_copies.constFind(path) : m_copies.cend();
+            if (copy == m_copies.cend() || copy->source.isEmpty() || !QFileInfo(copy->source).isFile()) {
+                // not a copy, or one whose original is gone: it stays as it is
                 continue;
             }
-        }
-
-        // a folder of its own, holding the file under its own name in a
-        // folder of its old one's name: a file with no tags is still named
-        // after itself, and its album after its folder
-        const QString folder = store + u'/' + QUuid::createUuid().toString(QUuid::Id128).left(12);
-        const QString parent = info.dir().dirName().isEmpty() ? QStringLiteral("Music") : info.dir().dirName();
-        const QString home = folder + u'/' + parent;
-        const QString copy = home + u'/' + info.fileName();
-        const QString partial = copy + QStringLiteral(".partial");
-        const auto fail = [&] {
-            QDir(folder).removeRecursively();
-            result.failed.append(info.fileName());
-        };
-        // written aside and moved into place: a copy cut short is never taken
-        // for the song
-        if (!QDir().mkpath(home) || !QFile::copy(path, partial) || !QFile::rename(partial, copy)) {
-            fail();
-            continue;
-        }
-        copyCompanions(info, home);
-        const QFileInfo copied(copy);
-        Entry entry {copied.size(), copied.lastModified().toMSecsSinceEpoch(), readTags(copy, artworkDirectory)};
-        if (entry.tags.isEmpty()) {
-            fail();
-            continue;
-        }
-        kept.uri = QUrl::fromLocalFile(copy).toString();
-        kept.copied = true;
-        kept.origin = {source, size, modified};
-        kept.entry = entry;
-        known.insert(copy, kept.origin);
-        bySource.insert(source, copy);
-        result.kept.append(kept);
-    }
-    return result;
-}
-
-void LocalLibrary::adoptKept(const KeepResult &result)
-{
-    for (const Kept &kept : result.kept) {
-        if (!kept.copied) {
-            continue;
-        }
-        const QString path = QUrl(kept.uri).toLocalFile();
-        m_entries.insert(path, kept.entry);
-        m_copies.insert(path, kept.origin);
-        m_storeSongs.insert(kept.uri, songFor(path, kept.entry.tags));
-    }
-}
-
-void LocalLibrary::setCopying(int delta)
-{
-    const bool was = m_copying > 0;
-    m_copying = std::max(0, m_copying + delta);
-    if (was != (m_copying > 0)) {
-        emit copyingChanged();
-    }
-}
-
-void LocalLibrary::keepTracks(const QString &id, const QStringList &paths)
-{
-    setCopying(1);
-    m_keepQueue.append({id, paths});
-    keepNext();
-}
-
-void LocalLibrary::keepNext()
-{
-    if (m_keeping || m_keepQueue.isEmpty()) {
-        return;
-    }
-    m_keeping = true;
-    const auto [id, paths] = m_keepQueue.takeFirst();
-    // copied away from the window: a long album is a lot of bytes. what was
-    // copied before this began is known to it, so nothing is copied twice
-    QtConcurrent::run(QThreadPool::globalInstance(), &LocalLibrary::keep, paths, m_trackStore, m_artworkDirectory,
-                      m_copies)
-        .then(this, [this, id = id](const KeepResult &result) {
-            m_keeping = false;
-            finishKeeping(id, result);
-            setCopying(-1);
-            keepNext();
-        });
-}
-
-void LocalLibrary::finishKeeping(const QString &id, const KeepResult &result)
-{
-    adoptKept(result);
-    if (id.isEmpty()) {
-        // each in its place
-        QHash<QString, QString> copies;
-        for (const Kept &kept : result.kept) {
-            copies.insert(kept.source, kept.uri);
-        }
-        for (StoredPlaylist &stored : m_storedPlaylists) {
-            for (QString &uri : stored.uris) {
-                if (const auto copy = copies.constFind(QUrl(uri).toLocalFile()); copy != copies.cend()) {
-                    uri = *copy;
-                }
+            uri = QUrl::fromLocalFile(copy->source).toString();
+            changed = true;
+            // songs are known from the library's folders, so the original joins them
+            if (!std::any_of(sources.begin(), sources.end(), [&](const QString &source) { return isWithin(copy->source, source); })) {
+                sources.append(copy->source);
             }
         }
-        collectCopies();
-        savePlaylists();
-        publishPlaylists();
+    }
+    if (!changed) {
         return;
     }
-
-    StoredPlaylist *stored = findPlaylist(id);
-    if (stored) {
-        for (const Kept &kept : result.kept) {
-            stored->uris.append(kept.uri);
-        }
-    }
-    // copied for a playlist deleted meanwhile: let go again
+    setSources(sources);
+    // the copies nothing holds now are deleted, with the lyrics and cover beside them
     collectCopies();
     savePlaylists();
-    publishPlaylists();
-    QString problem;
-    if (result.failed.size() == 1) {
-        problem = QStringLiteral("“%1” could not be added.").arg(result.failed.first());
-    } else if (!result.failed.isEmpty()) {
-        problem = QStringLiteral("%1 files could not be added.").arg(result.failed.size());
-    }
-    emit tracksAdded(id, stored ? int(result.kept.size()) : 0, problem);
-}
-
-void LocalLibrary::adoptOutsideTracks()
-{
-    QStringList outside;
-    for (const StoredPlaylist &stored : std::as_const(m_storedPlaylists)) {
-        for (const QString &uri : stored.uris) {
-            const QString path = QUrl(uri).toLocalFile();
-            if (!path.isEmpty() && !isKeptCopy(path) && QFileInfo(path).isFile() && !outside.contains(path)) {
-                outside.append(path);
-            }
-        }
-    }
-    if (!outside.isEmpty()) {
-        keepTracks({}, outside);
-    }
 }
 
 void LocalLibrary::collectCopies()
@@ -1154,4 +1469,4 @@ void LocalLibrary::reorder(const QString &id, const QStringList &uris)
     publishPlaylists();
 }
 
-} // namespace swiftify
+} // namespace swifty

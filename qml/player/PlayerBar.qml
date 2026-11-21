@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Effects
-import Swiftify
+import Swifty
 
 // the floating player (FloatingPlayerBar): transport, what is playing with its
 // seek line, and lyrics, queue and volume. its colours follow the cover.
@@ -36,7 +37,7 @@ Item {
     readonly property real buttonSize: tiny ? 26 : (compact ? 28 : 32)
     readonly property real innerGap: tiny ? 6 : (compact ? 8 : 14)
     readonly property bool titleFits: nowPlaying.width - artwork.width - 8 >= 48
-    readonly property bool showsMeter: !compact && Settings.visualizersEnabled && Settings.playerBarVisualizer && Player.hasSong
+    readonly property bool showsMeter: !compact && Settings.visualizersEnabled && Player.hasSong
     property bool progressExpanded: seek.expanded
 
     implicitHeight: tiny ? 56 : 64
@@ -91,7 +92,7 @@ Item {
             iconSize: root.tiny ? 18 : 20
             toggled: Player.shuffle
             fillWhenToggled: false
-            tooltip: Player.shuffle ? qsTr("Disable shuffle") : qsTr("Enable shuffle")
+            tooltip: Player.shuffle ? "Disable shuffle" : "Enable shuffle"
             onClicked: Player.toggleShuffle()
         }
         TransportButton {
@@ -105,7 +106,7 @@ Item {
             iconSize: root.tiny ? 20 : 24
             fillWhenToggled: false
             enabled: Player.canSkipBackward
-            tooltip: qsTr("Previous song")
+            tooltip: "Previous song"
             onClicked: Player.skipBackward()
             alwaysFilled: true
         }
@@ -131,7 +132,7 @@ Item {
             size: root.buttonSize
             iconSize: root.tiny ? 20 : 24
             enabled: Player.canSkipForward
-            tooltip: qsTr("Next song")
+            tooltip: "Next song"
             onClicked: Player.skipForward()
             alwaysFilled: true
         }
@@ -147,7 +148,7 @@ Item {
             toggled: Player.repeatMode !== Player.RepeatMode.Off
             fillWhenToggled: false
             enabled: Player.hasSong
-            tooltip: Player.repeatMode === Player.RepeatMode.One ? qsTr("Repeat song") : (Player.repeatMode === Player.RepeatMode.All ? qsTr("Repeat queue") : qsTr("Repeat off"))
+            tooltip: Player.repeatMode === Player.RepeatMode.One ? "Repeat song" : (Player.repeatMode === Player.RepeatMode.All ? "Repeat queue" : "Repeat off")
             onClicked: Player.cycleRepeatMode()
         }
     }
@@ -289,14 +290,14 @@ Item {
 
             Column {
                 anchors.left: parent.left
-                anchors.right: more.visible ? more.left : parent.right
+                anchors.right: favourite.visible ? favourite.left : more.visible ? more.left : parent.right
                 anchors.rightMargin: more.visible ? 4 : 0
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
 
                 TitleText {
                     width: parent.width
-                    text: Player.hasSong ? Player.currentSong.name : qsTr("Not Playing")
+                    text: Player.hasSong ? Player.currentSong.name : "Not Playing"
                     elide: Text.ElideRight
                     animateChange: true
                     changeDistanceX: 6
@@ -340,11 +341,26 @@ Item {
                 }
                 StyledText {
                     width: parent.width
-                    text: Player.hasSong ? Player.currentSong.artists : qsTr("Choose something to play")
+                    text: Player.hasSong ? Player.currentSong.artists : "Choose something to play"
                     elide: Text.ElideRight
                     font.pixelSize: Appearance.fontSize.smaller
                     color: root.scheme.onSurfaceVariant
                 }
+            }
+
+            IconButton {
+                id: favourite
+                anchors.right: more.left
+                anchors.rightMargin: 2
+                anchors.verticalCenter: parent.verticalCenter
+                visible: Player.hasSong && !root.compact
+                scheme: root.scheme
+                symbol: "star"
+                toggled: Library.savedRevision >= 0 && Player.hasSong && Library.isSaved(Player.currentSong.uri)
+                size: 28
+                iconSize: 18
+                tooltip: toggled ? "Remove from Favourites" : "Add to Favourites"
+                onClicked: Library.toggleSaved(Player.currentSong)
             }
 
             IconButton {
@@ -450,7 +466,7 @@ Item {
             size: root.buttonSize
             iconSize: root.tiny ? 18 : 20
             toggled: Player.showingLyrics
-            tooltip: qsTr("Lyrics")
+            tooltip: "Lyrics"
             onClicked: Player.toggleLyricsPanel()
         }
         IconButton {
@@ -460,7 +476,7 @@ Item {
             size: root.buttonSize
             iconSize: root.tiny ? 18 : 20
             toggled: Player.showingQueue
-            tooltip: qsTr("Playing Next")
+            tooltip: "Playing Next"
             onClicked: Player.toggleQueuePanel()
         }
         VolumeControl {
@@ -473,7 +489,7 @@ Item {
         id: artMenu
         sourceComponent: StyledMenu {
             StyledMenuItem {
-                text: qsTr("Open Immersive Player")
+                text: "Open Immersive Player"
                 symbol: "open_in_full"
                 enabled: Player.hasSong
                 onTriggered: root.immersiveRequested()

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the speaker button that slides out into a volume pill. a second click
 // mutes; moving away folds it back. the sleep timer's fade locks the slider.
@@ -90,7 +91,7 @@ Item {
             iconSize: 20
             symbol: root.symbol
             iconColor: root.expanded ? root.scheme.primary : root.scheme.onSurfaceVariant
-            tooltip: root.expanded ? (Player.volume <= 0.01 ? qsTr("Unmute") : qsTr("Mute")) : qsTr("Show Volume")
+            tooltip: root.expanded ? (Player.volume <= 0.01 ? "Unmute" : "Mute") : "Show Volume"
             onClicked: {
                 if (root.expanded) {
                     Player.toggleMute()

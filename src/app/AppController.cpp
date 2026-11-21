@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,13 +54,13 @@
 #include <malloc.h>
 #endif
 
-#if defined(SWIFTIFY_HAS_DBUS) && defined(Q_OS_LINUX)
+#if defined(SWIFTY_HAS_DBUS) && defined(Q_OS_LINUX)
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusServiceWatcher>
 #endif
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 AppController *s_instance = nullptr;
@@ -84,7 +85,7 @@ AppController::AppController(QObject *parent)
 #ifdef Q_OS_WIN
     m_trayAvailable = QSystemTrayIcon::isSystemTrayAvailable();
 #endif
-#if defined(SWIFTIFY_HAS_DBUS) && defined(Q_OS_LINUX)
+#if defined(SWIFTY_HAS_DBUS) && defined(Q_OS_LINUX)
     // qt's tray icon on linux is a StatusNotifierItem, which needs a watcher
     // to register with; without one it has nowhere to appear
     const QString watcher = QStringLiteral("org.kde.StatusNotifierWatcher");
@@ -217,12 +218,12 @@ void AppController::releaseMemory()
 
 QString AppController::version() const
 {
-    return QStringLiteral(SWIFTIFY_VERSION);
+    return QStringLiteral(SWIFTY_VERSION);
 }
 
 bool AppController::hasDesktopIntegration() const
 {
-#ifdef SWIFTIFY_DESKTOP_INTEGRATION
+#ifdef SWIFTY_DESKTOP_INTEGRATION
     return true;
 #else
     return false;
@@ -242,13 +243,13 @@ void AppController::handleCommand(const QString &command)
     } else if (command == QLatin1StringView("playlists") && library) {
         library->showPlaylists();
     } else if (command == QLatin1StringView("songs") && library) {
+        library->showSongs();
+    } else if (command == QLatin1StringView("favourites") && library) {
         library->showSavedSongs();
-    } else if (command == QLatin1StringView("stats") && library) {
-        library->showStats();
-    } else if (command == QLatin1StringView("local-files") && library) {
-        library->showLocalFiles();
-    } else if (command == QLatin1StringView("local-tracks") && library) {
-        library->showLocalTracks();
+    } else if (command == QLatin1StringView("albums") && library) {
+        library->showAlbums();
+    } else if (command == QLatin1StringView("artists") && library) {
+        library->showArtists();
     } else if (command == QLatin1StringView("back") && library) {
         library->goBack();
     } else if (command == QLatin1StringView("play-recent") && library && player) {
@@ -326,7 +327,7 @@ QString typeName(const QObject *object)
 bool isOwnComponent(const QObject *object)
 {
     const QString name = QString::fromLatin1(object->metaObject()->className());
-    return name.contains(QLatin1StringView("_QMLTYPE_")) || name.startsWith(QLatin1StringView("swiftify::"));
+    return name.contains(QLatin1StringView("_QMLTYPE_")) || name.startsWith(QLatin1StringView("swifty::"));
 }
 
 void census(QQuickItem *item, const QString &owner, const QRectF &window, QMap<QString, int> &drawn)
@@ -430,4 +431,4 @@ void AppController::openUrl(const QString &url) const
     QDesktopServices::openUrl(QUrl(url));
 }
 
-} // namespace swiftify
+} // namespace swifty

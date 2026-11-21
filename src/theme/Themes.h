@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,7 +26,7 @@
 #include <QString>
 #include <QtQml/qqmlregistration.h>
 
-namespace swiftify {
+namespace swifty {
 
 /// a colour theme as the settings show it: its name and a few of its colours
 /// in the current light or dark, for the swatch
@@ -90,7 +91,9 @@ struct Family {
 };
 
 const QList<Family> &families();
-/// nullptr for "system", "builtin" or anything unknown
+/// swifty's own colours, the "builtin" theme, from its five-colour design
+const Family &swifty();
+/// nullptr for "system", "builtin" (see swifty()) or anything unknown
 const Family *find(const QString &id);
 MaterialScheme::Roles roles(const Variant &variant, bool dark);
 
@@ -98,4 +101,4 @@ MaterialScheme::Roles roles(const Variant &variant, bool dark);
 qreal contrast(const QColor &a, const QColor &b);
 
 } // namespace themes
-} // namespace swiftify
+} // namespace swifty

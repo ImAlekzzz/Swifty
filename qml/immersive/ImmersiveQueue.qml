@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // Playing Next in the immersive player (FullscreenQueue): the playing song,
 // then the rest. when the queue steps on, the rows follow one after another
@@ -40,11 +41,12 @@ Item {
         Reveal.shown: !Player.hasSong && Player.upNext.count === 0
         scheme: root.scheme
         symbol: "queue_music"
-        title: qsTr("Queue Empty")
+        title: "Queue Empty"
         description: UiState.catchphrase
     }
 
     ListView {
+        WheelScroll {}
         id: list
         anchors.fill: parent
         Reveal.shown: Player.hasSong || Player.upNext.count > 0
@@ -55,9 +57,6 @@ Item {
         leftMargin: 8
         rightMargin: 8
         boundsBehavior: Flickable.StopAtBounds
-        // the fade hides lines scrolled past the edge, the clip keeps them
-        // from taking clicks meant for the top bar
-        clip: true
 
         layer.enabled: true
         layer.effect: ShaderEffect {

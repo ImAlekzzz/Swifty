@@ -28,9 +28,9 @@
 #import <AppKit/AppKit.h>
 #import <MediaPlayer/MediaPlayer.h>
 
-Q_LOGGING_CATEGORY(lcNowPlaying, "swiftify.nowplaying")
+Q_LOGGING_CATEGORY(lcNowPlaying, "swifty.nowplaying")
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
@@ -184,4 +184,4 @@ void NowPlaying::loadArtwork(const QUrl &url)
     });
 }
 
-} // namespace swiftify
+} // namespace swifty

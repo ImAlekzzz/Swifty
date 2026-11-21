@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Swiftify, a spotify player for desktop
 # Copyright (C) 2026  shred0s
+# Copyright (C) 2026  ImAlekz (modified for Swifty)
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# builds an arm64 swiftify.app with qt bundled, signed ad hoc, in a dmg,
+# builds an arm64 swifty.app with qt bundled, signed ad hoc, in a dmg,
 # against a qt kit from the qt installer or aqtinstall
 #
 # usage
@@ -55,14 +56,14 @@ for tool in cmake ninja git cargo codesign hdiutil lipo vtool; do
 done
 
 SOURCE="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="$(sed -n '/^project(Swiftify/,/VERSION/s/^ *VERSION \([0-9.]*\).*/\1/p' "$SOURCE/CMakeLists.txt")"
+VERSION="$(sed -n '/^project(Swifty/,/VERSION/s/^ *VERSION \([0-9.]*\).*/\1/p' "$SOURCE/CMakeLists.txt")"
 [[ -n "$VERSION" ]] || fail "could not read the version from CMakeLists.txt"
-NAME="swiftify-$VERSION-macos-arm64"
+NAME="swifty-$VERSION-macos-arm64"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 WORK="$SOURCE/build-macos-dmg"
 DEPS="$WORK/deps"
-APP="$WORK/Swiftify.app"
+APP="$WORK/Swifty.app"
 mkdir -p "$WORK/sources"
 
 # the oldest macos the kit's qt runs on, which the app can't go below
@@ -75,14 +76,14 @@ echo "version $VERSION"
 echo "macos $MINIMUM or newer"
 echo "output $OUT/$NAME.dmg"
 
-# homebrew's qt, qtkeychain and qcoro are left out, so only the kit's qt and
-# the libraries built here get linked
+# homebrew's qt and qcoro are left out, so only the kit's qt and the library
+# built here get linked
 common=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
     "-DCMAKE_PREFIX_PATH=$QT;$DEPS" "-DCMAKE_IGNORE_PREFIX_PATH=/opt/homebrew;/usr/local"
     -DCMAKE_OSX_ARCHITECTURES=arm64 "-DCMAKE_OSX_DEPLOYMENT_TARGET=$MINIMUM")
 
-# qtkeychain and qcoro are built static against the same qt, at tags known to
-# work, so there is nothing of theirs to bundle
+# qcoro is built static against the same qt, at a tag known to work, so there
+# is nothing of its to bundle
 build_dependency() {
     local name="$1" url="$2" tag="$3"
     shift 3
@@ -94,17 +95,15 @@ build_dependency() {
     cmake --build "$WORK/$name" --parallel "$JOBS"
     cmake --install "$WORK/$name"
 }
-build_dependency qtkeychain https://github.com/frankosterfeld/qtkeychain.git 0.17.0 \
-    -DBUILD_WITH_QT5=OFF -DBUILD_WITH_QT6=ON -DBUILD_TEST_APPLICATION=OFF -DBUILD_TRANSLATIONS=OFF
 build_dependency qcoro https://github.com/qcoro/qcoro.git v0.13.0 \
     -DUSE_QT_VERSION=6 -DQCORO_WITH_QTDBUS=OFF -DQCORO_WITH_QTWEBSOCKETS=OFF -DQCORO_WITH_QTQUICK=OFF \
     -DQCORO_WITH_QML=OFF -DQCORO_WITH_QTTEST=OFF -DQCORO_BUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF
 
-cmake -S "$SOURCE" -B "$WORK/swiftify" "${common[@]}" -DRust_CARGO_TARGET=aarch64-apple-darwin -DSWIFTIFY_BUNDLED_QT=ON
-cmake --build "$WORK/swiftify" --parallel "$JOBS"
+cmake -S "$SOURCE" -B "$WORK/swifty" "${common[@]}" -DRust_CARGO_TARGET=aarch64-apple-darwin -DSWIFTY_BUNDLED_QT=ON
+cmake --build "$WORK/swifty" --parallel "$JOBS"
 
 rm -rf "${APP:?}"
-ditto "$WORK/swiftify/swiftify.app" "$APP"
+ditto "$WORK/swifty/swifty.app" "$APP"
 plutil -replace LSMinimumSystemVersion -string "$MINIMUM" "$APP/Contents/Info.plist"
 "$QT/bin/macdeployqt" "$APP" "-qmldir=$SOURCE/qml"
 
@@ -144,25 +143,29 @@ while IFS= read -r -d '' file; do
     done < <(otool -L "$file" | tail -n +2 | awk '{ print $1 }')
 done < <(find "$APP" -type f -print0)
 [[ -z "$problems" ]] || fail "the app is not self contained"$'\n'"$problems"
+# lyrics and artist pictures come over https
+[[ -f "$APP/Contents/Resources/LICENSE" ]] || fail "the license is missing"
+for license in material-color-utilities.LICENSE rounded-polygon-qmljs.LICENSE material-symbols.LICENSE \
+    rust-crates.LICENSE qt.LICENSE qt.NOTICE qcoro.LICENSE; do
+    [[ -f "$APP/Contents/Resources/$license" ]] || fail "$license is missing"
+done
 [[ -d "$APP/Contents/PlugIns/tls" ]] || fail "the tls plugins are missing"
 [[ -f "$APP/Contents/PlugIns/platforms/libqcocoa.dylib" ]] || fail "the cocoa platform plugin is missing"
 [[ -d "$APP/Contents/Resources/qml/QtQuick" ]] || fail "qt's qml modules are missing"
-[[ -f "$APP/Contents/Resources/LICENSE" ]] || fail "the license is missing"
-for license in material-color-utilities.LICENSE rounded-polygon-qmljs.LICENSE material-symbols.LICENSE \
-    rust-crates.LICENSE qt.LICENSE qt.NOTICE qtkeychain.LICENSE qcoro.LICENSE; do
-    [[ -f "$APP/Contents/Resources/$license" ]] || fail "$license is missing"
-done
 
 # the dmg opens to the app beside a link to applications. hdiutil sometimes
 # finds the volume busy on ci, so it gets a few tries
 STAGE="$WORK/dmg"
 rm -rf "${STAGE:?}"
 mkdir -p "$STAGE"
-ditto "$APP" "$STAGE/Swiftify.app"
+ditto "$APP" "$STAGE/Swifty.app"
+# the licence and the credits go with the app
+cp "$SOURCE/LICENSE" "$STAGE/LICENSE"
+cp "$SOURCE/THIRD_PARTY_LICENSES.md" "$STAGE/THIRD_PARTY_LICENSES.md"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$OUT/$NAME.dmg"
 for attempt in 1 2 3; do
-    if hdiutil create -volname Swiftify -srcfolder "$STAGE" -fs HFS+ -format UDZO "$OUT/$NAME.dmg"; then
+    if hdiutil create -volname Swifty -srcfolder "$STAGE" -fs HFS+ -format UDZO "$OUT/$NAME.dmg"; then
         break
     fi
     [[ $attempt -lt 3 ]] || fail "hdiutil could not make the dmg"

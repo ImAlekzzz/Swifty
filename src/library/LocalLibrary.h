@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +34,7 @@
 class QQmlEngine;
 class QJSEngine;
 
-namespace swiftify {
+namespace swifty {
 
 class Settings;
 
@@ -56,12 +57,10 @@ class LocalLibrary : public QObject {
 
     /// what was added: folders, searched all the way down, and single files
     Q_PROPERTY(QStringList sources READ sources NOTIFY sourcesChanged FINAL)
-    Q_PROPERTY(swiftify::SongListModel *songs READ songs CONSTANT FINAL)
+    Q_PROPERTY(swifty::SongListModel *songs READ songs CONSTANT FINAL)
     Q_PROPERTY(bool scanning READ isScanning NOTIFY scanningChanged FINAL)
     /// the playlists made here, newest first
-    Q_PROPERTY(swiftify::PlaylistListModel *playlists READ playlists CONSTANT FINAL)
-    /// tracks are being copied into a playlist
-    Q_PROPERTY(bool copying READ isCopying NOTIFY copyingChanged FINAL)
+    Q_PROPERTY(swifty::PlaylistListModel *playlists READ playlists CONSTANT FINAL)
 
 public:
     /// `storageDirectory` holds what the tags said and the covers taken out
@@ -79,8 +78,8 @@ public:
     SongListModel *songs() const { return m_songs; }
     bool isScanning() const { return m_scanning; }
     PlaylistListModel *playlists() const { return m_playlists; }
-    bool isCopying() const { return m_copying > 0; }
-    /// every song of one's own: the folders added, and the playlists' copies
+    /// every song of one's own: the folders and files added, and the copies an older
+    /// version made for playlists whose originals are gone
     QList<Song> allSongs() const;
 
     /// a playlist made here; invalid if there is none by that id
@@ -90,17 +89,18 @@ public:
     /// a playlist's songs as the library has them now, each its own
     /// occurrence
     QList<Song> songsOf(const QString &id) const;
-    /// a new playlist, to hold copies of the files among `songs`
+    /// a new playlist, starting with the files among `songs`
     Playlist createPlaylist(const QString &name, const QString &description, const QByteArray &coverJpeg,
                             const QList<Song> &songs);
     /// a new name and description, and a new cover if one is given
     bool updatePlaylist(const QString &id, const QString &name, const QString &description, const QByteArray &coverJpeg);
     bool deletePlaylist(const QString &id);
-    /// copies the files among `songs` in and adds them at the end, in the
-    /// background; how many were asked for. reports through tracksAdded
+    /// adds the files among `songs` at the end: the playlist holds the path of each,
+    /// and nothing is copied. how many were added
     int addSongs(const QString &id, const QList<Song> &songs);
-    /// copies music files, or every one in a folder, from anywhere into the
-    /// playlist's keeping and adds them at its end. reports through tracksAdded
+    /// adds music files, or every one in a folder, from anywhere at the end of
+    /// the playlist. one outside the library's folders joins the library, which
+    /// is where songs are known from. reports through tracksAdded
     Q_INVOKABLE void addFiles(const QString &playlistId, const QList<QUrl> &urls);
     /// takes a track out wherever it is in the playlist; how many times
     int removeSong(const QString &id, const QString &uri);
@@ -125,6 +125,10 @@ public:
     Q_INVOKABLE void removeSource(const QString &path);
     /// searches every source again, for files added, changed or gone
     Q_INVOKABLE void rescan();
+    /// searches again only if the last search was a while ago, and none is going
+    /// on: for when the window comes back into focus, which is when files
+    /// were likely added
+    Q_INVOKABLE void rescanIfStale();
 
 signals:
     void sourcesChanged();
@@ -133,7 +137,6 @@ signals:
     void scanned(int songCount);
     /// a playlist was made, changed or deleted, or the files it holds were
     void playlistsChanged();
-    void copyingChanged();
     /// tracks asked for were copied into a playlist: how many went in, and
     /// what could not, if anything
     void tracksAdded(const QString &playlistId, int count, const QString &problem);
@@ -153,6 +156,9 @@ private:
 
     static ScanResult scan(const QStringList &sources, QHash<QString, Entry> known, const QString &artworkDirectory,
                            const QString &cachePath);
+    /// what the last searches found, from the cache database; a local-files.json
+    /// left by an earlier version is read into it once. runs off the window's thread
+    static QHash<QString, Entry> loadEntries(const QString &cachePath, const QString &legacyCachePath);
     static Song songFor(const QString &path, const QJsonObject &tags);
     /// the songs among `entries`, by artist and album, then track
     static QList<Song> songsFrom(const QHash<QString, Entry> &entries);
@@ -164,60 +170,41 @@ private:
         QString cover;
         QStringList uris;
     };
-    /// the file a copy was taken from, as it was then: the same file added
-    /// again is not copied again
+    /// the file a copy was taken from, as it was then
     struct Origin {
         QString source;
         qint64 size = 0;
         qint64 modified = 0;
     };
-    /// one track asked for, as it is kept
-    struct Kept {
-        /// the path it was asked for by
-        QString source;
-        QString uri;
-        /// copied now, rather than one kept already
-        bool copied = false;
-        Origin origin;
-        Entry entry;
-    };
-    struct KeepResult {
-        QList<Kept> kept;
-        QStringList failed;
-    };
-
-    /// copies `inputs` (files, and folders' music files) into `store`,
-    /// reading each copy's tags; one kept already is used again. pure, for
-    /// any thread
-    static KeepResult keep(const QStringList &inputs, const QString &store, const QString &artworkDirectory,
-                           const QHash<QString, Origin> &origins);
-    /// copies tracks in and adds them to the playlist `id`, after whatever
-    /// is being copied already, so they land in the order they were asked
-    /// for. with no id, the tracks of every playlist still outside are
-    /// copied in, each in its place
-    void keepTracks(const QString &id, const QStringList &paths);
-    void keepNext();
-    void finishKeeping(const QString &id, const KeepResult &result);
-    /// takes what `keep` copied into the library's own reckoning
-    void adoptKept(const KeepResult &result);
-    /// tracks of playlists that are still files elsewhere (from before
-    /// playlists held copies) are copied in, each in its place
-    void adoptOutsideTracks();
+    /// playlists made by an older version held copies of their files: the
+    /// ones whose original is still there are put back on it, and let go
+    void moveBackToOriginals();
     /// lets go of copies no playlist holds
     void collectCopies();
     /// at launch, before anything is copied: folders in the store nobody knows
     void sweepStore();
-    void setCopying(int delta);
     bool isKeptCopy(const QString &path) const;
     QStringList scanSources() const;
 
-    void loadCache();
+    /// reads the cache on another thread; what it held shows when it is done, and
+    /// a search asked for before then waits for it
+    void startLoadingCache();
+    void applyCache();
     void setSources(const QStringList &sources);
     void setScanning(bool scanning);
-    /// false when the list is there but could not be read: then nothing of
-    /// it or the store is written over or let go
-    bool loadPlaylists();
+    /// the playlists live in a SQLite database; a local-playlists.json left by an
+    /// earlier version is read into it once, and set aside
+    bool openDatabase();
+    void importLegacyJson();
+    void loadPlaylists();
+    /// writes what changed since the last save, in one transaction
     void savePlaylists() const;
+    /// with no SQLite driver to be had the playlists are kept in the JSON file as
+    /// before, so none are lost; they move into the database once there is one
+    void readJsonPlaylists();
+    void writeJsonPlaylists() const;
+    static size_t contentHash(const StoredPlaylist &stored);
+    static size_t copiesHash(const QHash<QString, Origin> &copies);
     /// the playlists as they show now, after a change to them or their files
     void publishPlaylists();
     using SongIndex = QHash<QString, const Song *>;
@@ -232,30 +219,37 @@ private:
     QString writeCover(const StoredPlaylist &stored, const QByteArray &jpeg) const;
 
     Settings *m_settings;
+    /// the cache database, and the JSON file earlier versions kept it in
     QString m_cachePath;
+    QString m_legacyCachePath;
+    bool m_cacheLoaded = false;
     QString m_artworkDirectory;
     QStringList m_sources;
     SongListModel *m_songs;
     QHash<QString, Entry> m_entries;
     bool m_scanning = false;
+    /// the JSON file earlier versions kept the playlists in, read only to move them
     QString m_playlistsPath;
-    bool m_playlistsReadable = true;
+    QString m_databasePath;
+    QString m_databaseName;
+    /// what the database holds of the playlists, so a save writes only what changed
+    mutable QHash<QString, size_t> m_savedPlaylists;
+    mutable QStringList m_savedOrder;
+    mutable size_t m_savedCopies = 0;
+    mutable bool m_copiesSaved = false;
     QString m_coverDirectory;
-    /// where the playlists' copies live, each in a folder of its own
+    /// where copies made by older versions live, each in a folder of its own
     QString m_trackStore;
-    /// the copies, by their path
+    /// those copies, by their path, with the file each was made from
     QHash<QString, Origin> m_copies;
     /// the copies' songs, by uri
     QHash<QString, Song> m_storeSongs;
-    int m_copying = 0;
-    /// copies asked for and not yet begun, in order
-    QList<std::pair<QString, QStringList>> m_keepQueue;
-    bool m_keeping = false;
     QList<StoredPlaylist> m_storedPlaylists;
     PlaylistListModel *m_playlists;
     /// a search started after another one makes that one's result stale
     quint64 m_scanGeneration = 0;
     bool m_rescanQueued = false;
+    qint64 m_lastScanAtMs = 0;
 };
 
-} // namespace swiftify
+} // namespace swifty

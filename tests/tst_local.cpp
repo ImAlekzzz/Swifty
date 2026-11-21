@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,8 +25,6 @@
 #include "library/LocalLibrary.h"
 #include "playback/Lyrics.h"
 #include "playback/PlaybackController.h"
-#include "spotify/CredentialStore.h"
-#include "spotify/SpotifySession.h"
 
 #include <QDir>
 #include <QFile>
@@ -40,7 +39,7 @@
 
 #include <utility>
 
-using namespace swiftify;
+using namespace swifty;
 
 namespace {
 
@@ -89,10 +88,28 @@ QStringList addThreeSongs(LocalLibrary &library, const QTemporaryDir &music)
     }
     QSignalSpy scanned(&library, &LocalLibrary::scanned);
     library.addSources({QUrl::fromLocalFile(music.path())});
-    if (!scanned.wait(5000)) {
+    // the search can be done before anyone waits for it: it is the signal that counts
+    for (int waited = 0; scanned.isEmpty() && waited < 5000; waited += 20) {
+        QTest::qWait(20);
+    }
+    if (scanned.isEmpty()) {
         return {};
     }
     return uris;
+}
+
+/// whether two lists hold the very same songs, each the same occurrence
+bool sameInstances(const QList<Song> &left, const QList<Song> &right)
+{
+    if (left.size() != right.size()) {
+        return false;
+    }
+    for (qsizetype index = 0; index < left.size(); ++index) {
+        if (left.at(index).instanceId != right.at(index).instanceId) {
+            return false;
+        }
+    }
+    return true;
 }
 
 Song songWithUri(const LocalLibrary &library, const QString &uri)
@@ -123,6 +140,33 @@ class LocalTest : public QObject {
     Q_OBJECT
 
 private slots:
+    void searchFindsASongByItsGenre()
+    {
+        Song song;
+        song.name = QStringLiteral("Track");
+        song.artists = QStringLiteral("Someone");
+        song.albumName = QStringLiteral("Record");
+        song.genre = QStringLiteral("Hip-Hop/Rap");
+
+        QVERIFY(LibraryStore::songMatches(song, QStringLiteral("Hip-Hop")));
+        QVERIFY(LibraryStore::songMatches(song, QStringLiteral("hip-hop")));
+        QVERIFY(LibraryStore::songMatches(song, QStringLiteral("HIP-HOP")));
+        // only the punctuation differs
+        QVERIFY(LibraryStore::songMatches(song, QStringLiteral("hip hop")));
+        QVERIFY(LibraryStore::songMatches(song, QStringLiteral("hiphop")));
+        QVERIFY(LibraryStore::songMatches(song, QStringLiteral("rap")));
+        QVERIFY(!LibraryStore::songMatches(song, QStringLiteral("jazz")));
+        // the other fields still answer
+        QVERIFY(LibraryStore::songMatches(song, QStringLiteral("someone")));
+        QVERIFY(LibraryStore::songMatches(song, QStringLiteral("RECORD")));
+
+        // and the genre is kept with the song
+        QCOMPARE(Song::fromJson(song.toJson()).genre, QStringLiteral("Hip-Hop/Rap"));
+        Song plain;
+        plain.name = QStringLiteral("No genre");
+        QVERIFY(!LibraryStore::songMatches(plain, QStringLiteral("hip-hop")));
+    }
+
     void aFolderIsSearchedAndEachSongTakesItsOwnTags()
     {
         QTemporaryDir music;
@@ -140,11 +184,11 @@ private slots:
         notes.write("liner notes");
         notes.close();
 
-        Settings settings(storage.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(storage.filePath(QStringLiteral("swifty.conf")));
         LocalLibrary library(&settings, nullptr, storage.path());
         QSignalSpy scanned(&library, &LocalLibrary::scanned);
         QCOMPARE(library.addSources({QUrl::fromLocalFile(music.path())}), 1);
-        QVERIFY(scanned.wait(5000));
+        QTRY_VERIFY_WITH_TIMEOUT(scanned.count() > 0, 5000);
         QCOMPARE(library.songs()->count(), 3);
 
         // by artist and album, in the album's own order
@@ -172,7 +216,7 @@ private slots:
         QCOMPARE(again.songs()->count(), 3);
         QVERIFY(again.isScanning());
         QSignalSpy againScanned(&again, &LocalLibrary::scanned);
-        QVERIFY(againScanned.wait(5000));
+        QTRY_VERIFY_WITH_TIMEOUT(againScanned.count() > 0, 5000);
         QCOMPARE(again.songs()->count(), 3);
 
         // and removing the folder takes its songs away
@@ -181,23 +225,23 @@ private slots:
         QVERIFY(library.sources().isEmpty());
     }
 
-    void playlistsHoldCopiesOfTheirOwn()
+    void playlistsHoldThePathsOfTheirSongsAndCopyNothing()
     {
         QTemporaryDir music;
         QTemporaryDir storage;
         QTemporaryDir elsewhere;
-        Settings settings(storage.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(storage.filePath(QStringLiteral("swifty.conf")));
         LocalLibrary library(&settings, nullptr, storage.path());
         const QStringList uris = addThreeSongs(library, music);
         QCOMPARE(uris.size(), 3);
         QSignalSpy changed(&library, &LocalLibrary::playlistsChanged);
         QSignalSpy added(&library, &LocalLibrary::tracksAdded);
 
-        // a spotify song cannot go in, only files, and those once copied
-        Song fromSpotify;
-        fromSpotify.uri = QStringLiteral("spotify:track:4uLU6hMCjMI75M1A2tKUQC");
+        // something that is not a file cannot go in, only files
+        Song notAFile;
+        notAFile.uri = QStringLiteral("https://example.org/song.mp3");
         const Playlist made = library.createPlaylist(QStringLiteral("  Night Drive "), QStringLiteral("for the road"),
-                                                     QByteArray("a cover"), {songWithUri(library, uris[0]), fromSpotify});
+                                                     QByteArray("a cover"), {songWithUri(library, uris[0]), notAFile});
         QVERIFY(made.isValid());
         QVERIFY(made.isLocal());
         QCOMPARE(made.name, QStringLiteral("Night Drive"));
@@ -207,27 +251,20 @@ private slots:
         QCOMPARE(library.playlistChoices().size(), 1);
         QVERIFY(changed.count() > 0);
         QVERIFY(!library.createPlaylist(QStringLiteral("  "), {}, {}, {}).isValid());
-        QVERIFY(added.wait(5000));
         QCOMPARE(library.playlist(made.id).songCount, 1);
 
-        // a copy of its own, kept with the app, not the file it came from
+        // the song is the file it is, where it is, and nothing is copied
         const Song first = library.songsOf(made.id).value(0);
         QCOMPARE(first.name, QStringLiteral("Avalon"));
-        QVERIFY(first.uri != uris[0]);
-        QVERIFY(first.localPath().startsWith(QDir(storage.path()).canonicalPath())
-                || first.localPath().startsWith(storage.path()));
-        QVERIFY(QFileInfo::exists(first.localPath()));
+        QCOMPARE(first.uri, uris[0]);
+        QVERIFY(!QFileInfo::exists(storage.filePath(QStringLiteral("local-playlist-tracks"))));
 
-        // files from anywhere, and a folder's, in the order asked for; what
-        // is not music is said so
+        // files from anywhere, and a folder's, in the order asked for; what is
+        // not music is said so. they join the library, where songs are known from
         writeTaggedWav(elsewhere.filePath(QStringLiteral("Dawn.wav")), {{"INAM", "Dawn"}});
         QVERIFY(QDir(elsewhere.path()).mkpath(QStringLiteral("Album")));
         writeTaggedWav(elsewhere.filePath(QStringLiteral("Album/10.wav")), {{"INAM", "Foxtrot"}});
         writeTaggedWav(elsewhere.filePath(QStringLiteral("Album/2.wav")), {{"INAM", "Echo"}});
-        QFile lyrics(elsewhere.filePath(QStringLiteral("Dawn.lrc")));
-        QVERIFY(lyrics.open(QIODevice::WriteOnly));
-        lyrics.write("[00:01.00]morning\n");
-        lyrics.close();
         QFile notes(elsewhere.filePath(QStringLiteral("notes.txt")));
         QVERIFY(notes.open(QIODevice::WriteOnly));
         notes.close();
@@ -235,32 +272,34 @@ private slots:
         library.addFiles(made.id, {QUrl::fromLocalFile(elsewhere.filePath(QStringLiteral("Dawn.wav"))),
                                    QUrl::fromLocalFile(elsewhere.filePath(QStringLiteral("Album"))),
                                    QUrl::fromLocalFile(elsewhere.filePath(QStringLiteral("notes.txt")))});
-        QVERIFY(added.wait(5000));
+        // nothing is copied, so it is told at once
+        QCOMPARE(added.count(), 1);
         QCOMPARE(added.first().at(1).toInt(), 3);
         QVERIFY(added.first().at(2).toString().contains(QStringLiteral("notes.txt")));
-        QCOMPARE(namesOf(library.songsOf(made.id)), (QStringList {"Avalon", "Dawn", "Echo", "Foxtrot"}));
-        // its lyrics went with it
-        const Song dawn = library.songsOf(made.id).value(1);
-        QVERIFY(QFileInfo::exists(QFileInfo(dawn.localPath()).dir().filePath(QStringLiteral("Dawn.lrc"))));
+        QCOMPARE(library.sources().size(), 3);
+        QTRY_COMPARE(namesOf(library.songsOf(made.id)), (QStringList {"Avalon", "Dawn", "Echo", "Foxtrot"}));
+        QVERIFY(!QFileInfo::exists(storage.filePath(QStringLiteral("local-playlist-tracks"))));
 
-        // the same file again is not copied again, and two asked for at once
-        // land in the order asked
-        added.clear();
+        // the same song again goes in again, and two asked for at once land in the order asked
         QCOMPARE(library.addSongs(made.id, {songWithUri(library, uris[0])}), 1);
         QCOMPARE(library.addSongs(made.id, {songWithUri(library, uris[1])}), 1);
-        QTRY_COMPARE(added.count(), 2);
         QList<Song> songs = library.songsOf(made.id);
         QCOMPARE(namesOf(songs), (QStringList {"Avalon", "Dawn", "Echo", "Foxtrot", "Avalon", "Bluebird"}));
         QCOMPARE(songs[0].uri, songs[4].uri);
-        // each its own occurrence, as a spotify playlist's songs are
+        // each its own occurrence
         QVERIFY(songs[0].instanceId != songs[4].instanceId);
 
-        // the originals moved and deleted: the playlist is whole
-        QVERIFY(QFile::remove(elsewhere.filePath(QStringLiteral("Dawn.wav"))));
-        QVERIFY(QFile::rename(QUrl(uris[0]).toLocalFile(), elsewhere.filePath(QStringLiteral("moved.wav"))));
+        // a file that goes away leaves the playlist while it is gone, and is back with the file
+        const QString dawn = elsewhere.filePath(QStringLiteral("Dawn.wav"));
+        QVERIFY(QFile::rename(dawn, dawn + QStringLiteral(".away")));
         QSignalSpy scanned(&library, &LocalLibrary::scanned);
         library.rescan();
-        QVERIFY(scanned.wait(5000));
+        QTRY_VERIFY_WITH_TIMEOUT(scanned.count() > 0, 5000);
+        QCOMPARE(namesOf(library.songsOf(made.id)), (QStringList {"Avalon", "Echo", "Foxtrot", "Avalon", "Bluebird"}));
+        QVERIFY(QFile::rename(dawn + QStringLiteral(".away"), dawn));
+        scanned.clear();
+        library.rescan();
+        QTRY_VERIFY_WITH_TIMEOUT(scanned.count() > 0, 5000);
         QCOMPARE(namesOf(library.songsOf(made.id)),
                  (QStringList {"Avalon", "Dawn", "Echo", "Foxtrot", "Avalon", "Bluebird"}));
 
@@ -271,10 +310,10 @@ private slots:
         library.reorder(made.id, {held[3], held[0], held[1], held[2], held[4], held[5]});
         QCOMPARE(namesOf(library.songsOf(made.id)),
                  (QStringList {"Foxtrot", "Avalon", "Dawn", "Echo", "Avalon", "Bluebird"}));
-        // both of a copy go, and the copy with them: nothing holds it now
+        // both of a song go, and the file stays
         QCOMPARE(library.removeSong(made.id, held[0]), 2);
         QCOMPARE(namesOf(library.songsOf(made.id)), (QStringList {"Foxtrot", "Dawn", "Echo", "Bluebird"}));
-        QVERIFY(!QFileInfo::exists(QUrl(held[0]).toLocalFile()));
+        QVERIFY(QFileInfo::exists(QUrl(held[0]).toLocalFile()));
 
         // kept: another library made from the same place has it at once
         {
@@ -283,7 +322,7 @@ private slots:
             QCOMPARE(namesOf(again.songsOf(made.id)), (QStringList {"Foxtrot", "Dawn", "Echo", "Bluebird"}));
             QCOMPARE(again.playlist(made.id).description, QStringLiteral("for the road"));
             QSignalSpy againScanned(&again, &LocalLibrary::scanned);
-            QVERIFY(againScanned.wait(5000));
+            QTRY_VERIFY_WITH_TIMEOUT(againScanned.count() > 0, 5000);
             QCOMPARE(namesOf(again.songsOf(made.id)), (QStringList {"Foxtrot", "Dawn", "Echo", "Bluebird"}));
         }
 
@@ -300,26 +339,23 @@ private slots:
         QVERIFY(library.updatePlaylist(made.id, QStringLiteral("Late Drive"), {}, {}));
         QCOMPARE(library.playlist(made.id).artworkUrl, updated.artworkUrl);
 
-        // deleted, its copies go with it
-        const QString copy = library.songsOf(made.id).value(0).localPath();
-        QVERIFY(QFileInfo::exists(copy));
+        // deleted, the music is untouched
         QVERIFY(library.deletePlaylist(made.id));
         QCOMPARE(library.playlists()->count(), 0);
         QVERIFY(!QFileInfo::exists(updated.artworkUrl.toLocalFile()));
-        QVERIFY(!QFileInfo::exists(copy));
+        QVERIFY(QFileInfo::exists(QUrl(uris[0]).toLocalFile()));
         LocalLibrary afterwards(&settings, nullptr, storage.path());
         QCOMPARE(afterwards.playlists()->count(), 0);
         QSignalSpy afterwardsScanned(&afterwards, &LocalLibrary::scanned);
-        QVERIFY(afterwardsScanned.wait(5000));
+        QTRY_VERIFY_WITH_TIMEOUT(afterwardsScanned.count() > 0, 5000);
     }
 
-    /// a playlist kept before playlists held copies takes copies of the
-    /// files it names, each in its place
-    void playlistsFromBeforeTakeCopiesOfTheirTracks()
+    /// a playlist is a list of paths, so one written as a list of paths works as it is
+    void aListOfPathsIsAPlaylist()
     {
         QTemporaryDir music;
         QTemporaryDir storage;
-        Settings settings(storage.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(storage.filePath(QStringLiteral("swifty.conf")));
         QStringList uris;
         {
             LocalLibrary library(&settings, nullptr, storage.path());
@@ -340,99 +376,138 @@ private slots:
         kept.close();
 
         LocalLibrary library(&settings, nullptr, storage.path());
-        QTRY_VERIFY(!library.isCopying() && library.songsOf(QStringLiteral("local:old")).size() == 2
-                    && !library.songsOf(QStringLiteral("local:old")).value(0).localPath().startsWith(music.path()));
         const QList<Song> songs = library.songsOf(QStringLiteral("local:old"));
         QCOMPARE(namesOf(songs), (QStringList {"Comet", "Avalon"}));
-        for (const Song &song : songs) {
-            QVERIFY(!uris.contains(song.uri));
-        }
-        // the search at launch is done before the folders go
+        QCOMPARE(songs[0].uri, uris[2]);
+        QCOMPARE(songs[1].uri, uris[0]);
+        QVERIFY(!QFileInfo::exists(storage.filePath(QStringLiteral("local-playlist-tracks"))));
         QTRY_VERIFY(!library.isScanning());
     }
 
-    void aListThatCannotBeReadLosesNothing_data()
+    /// playlists made by an older version held copies of their files: one whose
+    /// original is still there goes back onto it and the copy is let go; one
+    /// whose original is gone keeps its copy, and plays
+    void playlistsMadeWithCopiesGoBackToTheirOriginals()
     {
-        QTest::addColumn<QByteArray>("unreadable");
-        QTest::newRow("corrupt") << QByteArray("{\"version\": 1, \"playlists\": [");
-        QTest::newRow("newer") << QJsonDocument(QJsonObject {{QStringLiteral("version"), 2},
-                                                             {QStringLiteral("playlists"), QJsonArray {}}})
-                                      .toJson();
-    }
-
-    /// a list broken, or kept by a newer app, is left as it is, and the
-    /// copies it names with it, until it can be read again
-    void aListThatCannotBeReadLosesNothing()
-    {
-        QFETCH(QByteArray, unreadable);
         QTemporaryDir music;
         QTemporaryDir storage;
-        Settings settings(storage.filePath(QStringLiteral("swiftify.conf")));
-        const QString listPath = storage.filePath(QStringLiteral("local-playlists.json"));
-        QString id;
-        QString copy;
+        Settings settings(storage.filePath(QStringLiteral("swifty.conf")));
+        QStringList uris;
         {
             LocalLibrary library(&settings, nullptr, storage.path());
-            const QStringList uris = addThreeSongs(library, music);
-            QCOMPARE(uris.size(), 3);
-            QSignalSpy added(&library, &LocalLibrary::tracksAdded);
-            id = library.createPlaylist(QStringLiteral("Kept"), {}, {}, {songWithUri(library, uris[0])}).id;
-            QVERIFY(added.wait(5000));
-            copy = library.songsOf(id).value(0).localPath();
-            QTRY_VERIFY(!library.isCopying() && !library.isScanning());
+            uris = addThreeSongs(library, music);
         }
-        QVERIFY(QFileInfo::exists(copy));
-        QFile list(listPath);
-        QVERIFY(list.open(QIODevice::ReadOnly));
-        const QByteArray readable = list.readAll();
-        list.close();
-        QVERIFY(list.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        list.write(unreadable);
-        list.close();
-        const auto listNow = [&] {
-            QFile file(listPath);
-            return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+        QCOMPARE(uris.size(), 3);
+        const QString store = storage.filePath(QStringLiteral("local-playlist-tracks"));
+        const QString liveCopy = store + QStringLiteral("/aaaaaaaaaaaa/music/Avalon.wav");
+        const QString goneCopy = store + QStringLiteral("/bbbbbbbbbbbb/music/Bluebird.wav");
+        QVERIFY(QDir().mkpath(QFileInfo(liveCopy).absolutePath()));
+        QVERIFY(QDir().mkpath(QFileInfo(goneCopy).absolutePath()));
+        QVERIFY(QFile::copy(QUrl(uris[0]).toLocalFile(), liveCopy));
+        QVERIFY(QFile::copy(QUrl(uris[1]).toLocalFile(), goneCopy));
+        const auto playlist = [](const QString &id, const QString &name, const QString &copy) {
+            return QJsonObject {{QStringLiteral("id"), id},
+                                {QStringLiteral("name"), name},
+                                {QStringLiteral("songs"), QJsonArray {QUrl::fromLocalFile(copy).toString()}}};
         };
+        const auto origin = [](const QString &copy, const QString &source) {
+            return QJsonObject {{QStringLiteral("copy"), copy},
+                                {QStringLiteral("source"), source},
+                                {QStringLiteral("size"), 0},
+                                {QStringLiteral("modified"), 0}};
+        };
+        QFile kept(storage.filePath(QStringLiteral("local-playlists.json")));
+        QVERIFY(kept.open(QIODevice::WriteOnly));
+        kept.write(QJsonDocument(QJsonObject {
+                                     {QStringLiteral("version"), 1},
+                                     {QStringLiteral("playlists"),
+                                      QJsonArray {playlist(QStringLiteral("local:live"), QStringLiteral("Live"), liveCopy),
+                                                  playlist(QStringLiteral("local:gone"), QStringLiteral("Gone"), goneCopy)}},
+                                     {QStringLiteral("copies"),
+                                      QJsonArray {origin(liveCopy, QUrl(uris[0]).toLocalFile()),
+                                                  origin(goneCopy, music.filePath(QStringLiteral("gone/Bluebird.wav")))}},
+                                 })
+                       .toJson());
+        kept.close();
 
-        {
-            LocalLibrary library(&settings, nullptr, storage.path());
-            QCOMPARE(library.playlists()->count(), 0);
-            QTRY_VERIFY(!library.isScanning());
-            // the copy stays, and the list is not written over, not even by
-            // a playlist made now
-            QVERIFY(QFileInfo::exists(copy));
-            QVERIFY(library.createPlaylist(QStringLiteral("Meanwhile"), {}, {}, {}).isValid());
-            QCOMPARE(listNow(), unreadable);
-        }
-        QVERIFY(QFileInfo::exists(copy));
-        QCOMPARE(listNow(), unreadable);
-        // and kept aside besides
-        QFile aside(listPath + QStringLiteral(".unreadable"));
-        QVERIFY(aside.open(QIODevice::ReadOnly));
-        QCOMPARE(aside.readAll(), unreadable);
-
-        // readable again, the playlist is whole
-        QVERIFY(list.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        list.write(readable);
-        list.close();
         LocalLibrary library(&settings, nullptr, storage.path());
-        QCOMPARE(library.playlists()->count(), 1);
-        QTRY_COMPARE(library.songsOf(id).value(0).localPath(), copy);
+        // the one with its original is on it again, and its copy is gone
+        const QList<Song> live = library.songsOf(QStringLiteral("local:live"));
+        QCOMPARE(namesOf(live), (QStringList {"Avalon"}));
+        QCOMPARE(live[0].uri, uris[0]);
+        QVERIFY(!QFileInfo::exists(liveCopy));
+        // the one without keeps its copy, which plays
+        QTRY_COMPARE(namesOf(library.songsOf(QStringLiteral("local:gone"))), (QStringList {"Bluebird"}));
+        QVERIFY(QFileInfo::exists(goneCopy));
         QTRY_VERIFY(!library.isScanning());
-        QVERIFY(QFileInfo::exists(copy));
     }
 
-    void aPlaylistMadeHereOpensAndChangesWithoutSpotify()
+    /// a big folder is read on several threads at once: every song still comes out
+    /// once, with its own tags, and a second search finds the same without reading
+    void aBigFolderIsReadSideBySide()
     {
         QTemporaryDir music;
         QTemporaryDir storage;
-        Settings settings(storage.filePath(QStringLiteral("swiftify.conf")));
+        constexpr int kSongs = 60;
+        for (int index = 0; index < kSongs; ++index) {
+            // folders of ten, so there is more than one to walk
+            const QString folder = music.filePath(QStringLiteral("disc%1").arg(index / 10));
+            QVERIFY(QDir().mkpath(folder));
+            writeTaggedWav(folder + QStringLiteral("/%1.wav").arg(index),
+                           {{"INAM", QByteArray("Song ") + QByteArray::number(index)}, {"IART", "Someone"}, {"IPRD", "Album"},
+                            {"IPRT", QByteArray::number(index)}});
+        }
+        Settings settings(storage.filePath(QStringLiteral("swifty.conf")));
+        {
+            LocalLibrary library(&settings, nullptr, storage.path());
+            QSignalSpy scanned(&library, &LocalLibrary::scanned);
+            library.addSources({QUrl::fromLocalFile(music.path())});
+            QTRY_VERIFY_WITH_TIMEOUT(scanned.count() > 0, 20000);
+            QCOMPARE(library.songs()->count(), kSongs);
+            QStringList names = namesOf(library.songs()->songs());
+            names.sort();
+            QStringList wanted;
+            for (int index = 0; index < kSongs; ++index) {
+                wanted.append(QStringLiteral("Song %1").arg(index));
+            }
+            wanted.sort();
+            QCOMPARE(names, wanted);
+            for (const Song &song : library.songs()->songs()) {
+                QCOMPARE(song.artists, QStringLiteral("Someone"));
+                QCOMPARE(song.albumName, QStringLiteral("Album"));
+            }
+        }
+        // the same folder again: nothing changed, nothing is lost, and what was
+        // kept is not written again
+        const QFileInfo cache(storage.filePath(QStringLiteral("local-files.db")));
+        QVERIFY(cache.exists());
+        const QDateTime written = cache.lastModified();
+        QTest::qWait(1100);
+        LocalLibrary again(&settings, nullptr, storage.path());
+        QSignalSpy scannedAgain(&again, &LocalLibrary::scanned);
+        again.rescan();
+        QTRY_VERIFY_WITH_TIMEOUT(scannedAgain.count() > 0, 20000);
+        QCOMPARE(again.songs()->count(), kSongs);
+        QCOMPARE(QFileInfo(cache.filePath()).lastModified(), written);
+
+        // a file that is new is read, and then it is written
+        writeTaggedWav(music.filePath(QStringLiteral("disc0/new.wav")), {{"INAM", "New"}, {"IART", "Someone"}, {"IPRD", "Album"}});
+        scannedAgain.clear();
+        again.rescan();
+        QTRY_VERIFY_WITH_TIMEOUT(scannedAgain.count() > 0, 20000);
+        QCOMPARE(again.songs()->count(), kSongs + 1);
+        QVERIFY(QFileInfo(cache.filePath()).lastModified() > written);
+    }
+
+    void aPlaylistMadeHereOpensAndChanges()
+    {
+        QTemporaryDir music;
+        QTemporaryDir storage;
+        Settings settings(storage.filePath(QStringLiteral("swifty.conf")));
         ErrorCenter errors {nullptr};
-        MemoryCredentialStore credentials;
         QNetworkAccessManager network;
         testing::FakeCore core;
-        SpotifySession session(&core, &credentials, &network, &errors);
-        LibraryStore store(&session, &settings, &errors);
+        LibraryStore store(&settings, &errors);
         LocalLibrary library(&settings, nullptr, storage.path());
         store.attachLocalFiles(&library);
         const QStringList uris = addThreeSongs(library, music);
@@ -449,18 +524,88 @@ private slots:
         QCOMPARE(mine.name, QStringLiteral("Mine"));
         QVERIFY(store.isSelectedPlaylistEditable());
         QVERIFY(store.canReorderPlaylist());
-        QVERIFY(!store.isLoadingSongs());
-        // once copied in
         QTRY_COMPARE(namesOf(store.playlistSongs()->songs()), (QStringList {"Avalon"}));
 
-        // with nobody signed in to spotify
+        // no account of any kind is involved
         store.addToPlaylist(songWithUri(library, uris[1]), mine);
         store.addToPlaylist(songWithUri(library, uris[2]), mine);
         QTRY_COMPARE(namesOf(store.playlistSongs()->songs()), (QStringList {"Avalon", "Bluebird", "Comet"}));
         QCOMPARE(store.selectedPlaylist().songCount, 3);
-        Song fromSpotify;
-        fromSpotify.uri = QStringLiteral("spotify:track:4uLU6hMCjMI75M1A2tKUQC");
-        store.addToPlaylist(fromSpotify, mine);
+
+        // a song in a playlist is still found once, and not twice
+        store.setSearchQuery(QStringLiteral("Avalon"));
+        QCOMPARE(store.searchSongs()->count(), 1);
+        store.setSearchQuery(QString());
+
+        // the Songs page holds every song, once, whatever is a favourite
+        QTRY_COMPARE(store.allSongs()->count(), 3);
+        // and the Albums page one album for them, by its tags
+        QTRY_COMPARE(store.allAlbums()->count(), 1);
+        QCOMPARE(store.allAlbums()->at(0).name, QStringLiteral("Album"));
+        store.toggleSaved(songWithUri(library, uris[1]));
+        QCOMPARE(namesOf(store.savedSongs()->songs()), (QStringList {"Bluebird"}));
+        QCOMPARE(store.allSongs()->count(), 3);
+        store.toggleSaved(songWithUri(library, uris[1]));
+        QCOMPARE(store.savedSongs()->count(), 0);
+        QCOMPARE(store.allSongs()->count(), 3);
+
+        // the top bar's filter field narrows the list of the page that is open
+        store.setPlaylistFilterQuery(QStringLiteral("Bluebird"));
+        QCOMPARE(namesOf(store.displayedAllSongs()->songs()), (QStringList {"Bluebird"}));
+        QCOMPARE(store.displayedAlbums()->count(), 0);
+        QCOMPARE(store.displayedArtists()->count(), 0);
+        store.setPlaylistFilterQuery(QStringLiteral("Album"));
+        QCOMPARE(store.displayedAlbums()->count(), 1);
+        // and is forgotten on moving to another page
+        store.showAlbums();
+        QCOMPARE(store.playlistFilterQuery(), QString());
+        QCOMPARE(store.displayedAllSongs()->count(), 3);
+        store.showArtists();
+        QVERIFY(store.displayedArtists()->count() >= 1);
+        store.goBack();
+        store.goBack();
+
+        // a song added to the library shows everywhere it should: the list of every song,
+        // the search and the albums, though the library was worked out before
+        const QString extra = music.filePath(QStringLiteral("4.wav"));
+        writeTaggedWav(extra, {{"INAM", "Delta"}, {"IART", "Someone Else"}, {"IPRD", "Another Album"}, {"IPRT", "1"}});
+        library.rescan();
+        QTRY_COMPARE(store.allSongs()->count(), 4);
+        QTRY_COMPARE(store.allAlbums()->count(), 2);
+        store.setSearchQuery(QStringLiteral("Delta"));
+        QTRY_COMPARE(store.searchSongs()->count(), 1);
+        store.setSearchQuery(QString());
+        // and a star does not touch the list of every song
+        const QList<Song> beforeStar = store.allSongs()->songs();
+        store.toggleSaved(songWithUri(library, uris[0]));
+        QVERIFY(sameInstances(beforeStar, store.allSongs()->songs()));
+        store.toggleSaved(songWithUri(library, uris[0]));
+
+        // a song listened to is played; skipping and seeking through one is not
+        const Song heard = songWithUri(library, uris[0]);
+        store.notePlayProgress(heard, 0, 200'000, true);
+        for (quint32 at = 100; at <= 40'000; at += 100) {
+            store.notePlayProgress(heard, at, 200'000, true);
+        }
+        QCOMPARE(store.playCountOf(heard.uri), 1);
+        QCOMPARE(store.mostPlayed()->count(), 0);  // once is not most played
+        const Song skipped = songWithUri(library, uris[1]);
+        store.notePlayProgress(skipped, 0, 200'000, true);
+        store.notePlayProgress(skipped, 90'000, 200'000, true);
+        store.notePlayProgress(skipped, 150'000, 200'000, true);
+        QCOMPARE(store.playCountOf(skipped.uri), 0);
+        // played over from the start, and listened to again
+        store.notePlayProgress(heard, 1'000, 200'000, true);
+        for (quint32 at = 1'100; at <= 35'000; at += 100) {
+            store.notePlayProgress(heard, at, 200'000, true);
+        }
+        QCOMPARE(store.playCountOf(heard.uri), 2);
+        QCOMPARE(namesOf(store.mostPlayed()->songs()), (QStringList {"Avalon"}));
+        // the counts are kept
+        QCOMPARE(settings.value(QStringLiteral("playCounts")).toByteArray().contains("2"), true);
+        Song notAFile;
+        notAFile.uri = QStringLiteral("https://example.org/song.mp3");
+        store.addToPlaylist(notAFile, mine);
         QVERIFY(errors.message().contains(QStringLiteral("Only music files")));
         QCOMPARE(store.playlistSongs()->count(), 3);
 
@@ -481,19 +626,19 @@ private slots:
         QCOMPARE(saved.count(), 2);
         QCOMPARE(store.selectedPlaylist().name, QStringLiteral("Still Mine"));
 
-        // pinned, it shows with the pinned spotify playlists
+        // pinned, it shows with the pinned playlists
         store.togglePinned(store.selectedPlaylist());
         QCOMPARE(store.pinnedPlaylists()->count(), 1);
 
         // away and back again
-        store.showLocalFiles();
-        store.showLocalTracks();
-        QCOMPARE(store.page(), LibraryStore::Page::LocalTracks);
+        store.showAlbums();
+        store.showSongs();
+        QCOMPARE(store.page(), LibraryStore::Page::Songs);
         store.goBack();
-        QCOMPARE(store.page(), LibraryStore::Page::LocalFiles);
+        QCOMPARE(store.page(), LibraryStore::Page::Albums);
         store.goBack();
         QCOMPARE(store.selectedPlaylistId(), mine.id);
-        store.showLocalFiles();
+        store.showAlbums();
         store.selectPlaylistById(mine.id);
         QCOMPARE(store.selectedPlaylistId(), mine.id);
         QCOMPARE(store.playlistSongs()->count(), 2);
@@ -501,7 +646,7 @@ private slots:
         QSignalSpy deleted(&store, &LibraryStore::playlistDeleted);
         store.deletePlaylist(store.selectedPlaylist());
         QCOMPARE(deleted.count(), 1);
-        QCOMPARE(store.page(), LibraryStore::Page::LocalFiles);
+        QCOMPARE(store.page(), LibraryStore::Page::Playlists);
         QCOMPARE(store.pinnedPlaylists()->count(), 0);
         QCOMPARE(library.playlists()->count(), 0);
     }
@@ -510,7 +655,7 @@ private slots:
     {
         QTemporaryDir music;
         QTemporaryDir storage;
-        Settings settings(storage.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(storage.filePath(QStringLiteral("swifty.conf")));
         LocalLibrary library(&settings, nullptr, storage.path());
         const QStringList uris = addThreeSongs(library, music);
         QCOMPARE(uris.size(), 3);
@@ -519,11 +664,9 @@ private slots:
 
         // queued to play, as it is now
         ErrorCenter errors {nullptr};
-        MemoryCredentialStore credentials;
         QNetworkAccessManager network;
         testing::FakeCore core;
-        SpotifySession session(&core, &credentials, &network, &errors);
-        PlaybackController player(&core, &session, &settings, &errors);
+        PlaybackController player(&core, &settings, &errors);
         const Song queued = songWithUri(library, uris[0]);
         player.play(queued, {queued});
         for (int pass = 0; pass < 5; ++pass) {
@@ -532,15 +675,15 @@ private slots:
 
         QSignalSpy saved(&library, &LocalLibrary::tagsSaved);
         QSignalSpy scanned(&library, &LocalLibrary::scanned);
-        const QByteArray cover = QByteArrayLiteral("\xff\xd8\xff\xe0 a cover");
+        const QByteArray cover("\xff\xd8\xff\xe0 a cover", 14);
         library.editTags(uris[0],
                          {{QStringLiteral("title"), QStringLiteral("Avalon (Live)")},
                           {QStringLiteral("artist"), QStringLiteral("Roxy Music")},
                           {QStringLiteral("trackNumber"), QStringLiteral("9")}},
                          cover, false);
-        QVERIFY(saved.wait(5000));
+        QTRY_VERIFY_WITH_TIMEOUT(saved.count() > 0, 5000);
         QCOMPARE(saved.first().at(1).toBool(), true);
-        QVERIFY(scanned.wait(5000));
+        QTRY_VERIFY_WITH_TIMEOUT(scanned.count() > 0, 5000);
         const Song edited = songWithUri(library, uris[0]);
         QCOMPARE(edited.name, QStringLiteral("Avalon (Live)"));
         QCOMPARE(edited.artists, QStringLiteral("Roxy Music"));
@@ -557,8 +700,8 @@ private slots:
         // and the cover can go again
         saved.clear();
         library.editTags(uris[0], {}, {}, true);
-        QVERIFY(saved.wait(5000));
-        QVERIFY(scanned.wait(5000));
+        QTRY_VERIFY_WITH_TIMEOUT(saved.count() > 0, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(scanned.count() > 0, 5000);
         QVERIFY(songWithUri(library, uris[0]).artworkUrl.isEmpty());
 
         // a file the library does not hold is not touched
@@ -585,7 +728,7 @@ private slots:
         QCOMPARE(lyrics->lines.at(3).startTimeMs, 30'250u);
         QCOMPARE(lyrics->lineIndex(22'000), 1);
 
-        // spotify's lines carry no end, so each runs to the next one's start
+        // synced lines carry no end, so each runs to the next one's start
         const auto spotify = Lyrics::fromJson(R"({"syncType":"lineSynced","lines":[
             {"startTimeMs":1000,"endTimeMs":0,"words":"one"},
             {"startTimeMs":4000,"endTimeMs":0,"words":"two"}]})");
@@ -604,13 +747,11 @@ private slots:
     void aFileOfOnesOwnPlaysFromDiskWithItsLyrics()
     {
         QTemporaryDir directory;
-        Settings settings(directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(directory.filePath(QStringLiteral("swifty.conf")));
         ErrorCenter errors {nullptr};
-        MemoryCredentialStore credentials;
         QNetworkAccessManager network;
         testing::FakeCore core;
-        SpotifySession session(&core, &credentials, &network, &errors);
-        PlaybackController player(&core, &session, &settings, &errors);
+        PlaybackController player(&core, &settings, &errors);
 
         // brackets in a name, as "[HQ]" so often is, are no pattern
         const QString path = directory.filePath(QStringLiteral("Injury [HQ].mp3"));
@@ -626,7 +767,7 @@ private slots:
         for (int pass = 0; pass < 5; ++pass) {
             QCoreApplication::processEvents();
         }
-        // straight from disk: no stream, no spotify session asked for
+        // straight from disk: nothing else asked for
         const auto call = core.take(QStringLiteral("playFile"));
         QVERIFY(call);
         QCOMPARE(call->argument, path);

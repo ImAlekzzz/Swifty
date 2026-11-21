@@ -21,7 +21,7 @@
 #include <QDBusUnixFileDescriptor>
 #include <QObject>
 
-namespace swiftify {
+namespace swifty {
 
 class PlaybackController;
 
@@ -45,4 +45,4 @@ private:
     QDBusUnixFileDescriptor m_inhibitor;
 };
 
-} // namespace swiftify
+} // namespace swifty

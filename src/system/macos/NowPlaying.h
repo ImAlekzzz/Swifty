@@ -24,7 +24,7 @@
 
 #include <memory>
 
-namespace swiftify {
+namespace swifty {
 
 class ArtworkCache;
 class PlaybackController;
@@ -59,4 +59,4 @@ private:
     bool m_publishedPlaying = false;
 };
 
-} // namespace swiftify
+} // namespace swifty

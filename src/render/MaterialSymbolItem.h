@@ -24,7 +24,7 @@
 
 #include <memory>
 
-namespace swiftify {
+namespace swifty {
 
 struct SymbolGlyph;
 
@@ -101,4 +101,4 @@ private:
     bool m_stale = true;
 };
 
-} // namespace swiftify
+} // namespace swifty

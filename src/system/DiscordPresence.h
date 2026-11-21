@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,95 +19,88 @@
 
 #pragma once
 
-#include <QJsonObject>
-#include <QLocalSocket>
+#include <QByteArray>
 #include <QObject>
-#include <QTimer>
+#include <QString>
 #include <QStringList>
-#include <QtQml/qqmlregistration.h>
-#include <functional>
+#include <QThread>
+#include <QTimer>
 
-class QQmlEngine;
-class QJSEngine;
+class QLocalSocket;
 
-namespace swiftify {
+namespace swifty {
 
 class PlaybackController;
 class Settings;
 
-namespace discord {
-constexpr quint32 maxFrameSize = 1024 * 1024;
-QByteArray frame(quint32 opcode, const QByteArray &payload);
-// A complete frame is removed from buffer. Invalid lengths abort the connection.
-enum class FrameResult { Incomplete, Complete, Invalid };
-FrameResult takeFrame(QByteArray &buffer, quint32 &opcode, QByteArray &payload);
-QStringList socketCandidates(const QStringList &roots);
-}
-
-/// Local Discord IPC only. No token, SDK, external service, or background thread.
-/// Presence is opt-in; pauses keep a labeled track and progress bar.
-/// Disabling clears it and closes the connection.
-class DiscordPresence : public QObject {
+/// talks to the Discord app's local socket, on a thread of its own: looking
+/// for the socket, and connecting to it, can take a while (a busy pipe on
+/// windows makes the connect wait), and the window must never wait for it
+class DiscordWorker : public QObject {
     Q_OBJECT
-    QML_NAMED_ELEMENT(Discord)
-    QML_SINGLETON
-    Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged FINAL)
-    Q_PROPERTY(QString status READ status NOTIFY statusChanged FINAL)
+
 public:
-    static constexpr int kDefaultInactivityTimeoutMs = 10 * 60 * 1000;
+    explicit DiscordWorker(QObject *parent = nullptr);
 
-    DiscordPresence(PlaybackController *player, Settings *settings, QObject *parent = nullptr,
-                    std::function<QStringList()> socketLocator = {},
-                    int inactivityTimeoutMs = kDefaultInactivityTimeoutMs);
-    ~DiscordPresence() override;
-    static DiscordPresence *create(QQmlEngine *, QJSEngine *);
-    bool connected() const { return m_ready; }
-    QString status() const;
-    int inactivityTimeout() const { return m_inactivity.interval(); }
-    void setInactivityTimeout(int ms);
-    bool inactivityTimerActive() const { return m_inactivity.isActive(); }
-    bool idleTerminated() const { return m_idleTerminated; }
-
-signals:
-    void connectedChanged();
-    void statusChanged();
+public slots:
+    /// whether to show anything, and under which Discord application
+    void configure(bool enabled, const QString &clientId);
+    /// what to show: the json of an activity, or nothing for none
+    void setActivity(const QByteArray &activityJson);
+    /// takes the presence down and lets go of the socket
+    void shutdown();
 
 private:
-    void configure();
-    void connectNext();
-    void disconnected();
-    void readFrames();
-    void send(quint32 opcode, const QByteArray &payload);
-    void scheduleUpdate();
-    void update();
-    void clear();
-    void setReady(bool ready);
-    void handlePlaybackStateChanged();
-    void onInactivityTimeout();
-    enum class Failure { None, Unavailable, AccessDenied, TimedOut, InvalidFrame, RejectedConnection, RejectedActivity };
-    void fail(Failure failure, int code = -1);
+    enum Opcode : qint32 { Handshake = 0, Frame = 1, Close = 2, Ping = 3, Pong = 4 };
+
+    /// whether there is a reason to be connected: it is on, it has an
+    /// application, and there is something to show
+    bool wanted() const;
+    void ensureSocket();
+    void tryConnect();
+    void disconnectFromDiscord();
+    void onConnected();
+    void onReadyRead();
+    void send(Opcode opcode, const QByteArray &payload);
+    void handleFrame(const QByteArray &payload);
+    void sendActivity();
+    static QStringList socketPaths();
+
+    QLocalSocket *m_socket = nullptr;
+    QTimer *m_retry = nullptr;
+    QByteArray m_buffer;
+    QByteArray m_activity;
+    QString m_clientId;
+    bool m_enabled = false;
+    bool m_ready = false;
+    int m_candidate = 0;
+};
+
+/// shows what is playing on the person's Discord profile ("Listening to
+/// ..."), through the Discord desktop app. switched on and off, and given its
+/// Discord application, in the settings (Settings.discordPresence and
+/// Settings.discordClientId, which falls back to Swifty's own application). nothing happens if Discord is not running: it is
+/// looked for again every so often while a song plays.
+class DiscordPresence : public QObject {
+    Q_OBJECT
+
+public:
+    DiscordPresence(PlaybackController *player, Settings *settings, QObject *parent = nullptr);
+    ~DiscordPresence() override;
+
+private:
+    void pushConfiguration();
+    /// asks for the presence to be sent soon: several changes at once make one update
+    void schedule();
+    void publish();
 
     PlaybackController *m_player;
     Settings *m_settings;
-    std::function<QStringList()> m_socketLocator;
-    Failure m_failure = Failure::None;
-    int m_failureCode = -1;
-    QLocalSocket m_socket;
-    QTimer m_retry;
-    QTimer m_deadline;
-    QTimer m_update;
-    QTimer m_inactivity;
-    QStringList m_endpoints;
-    qsizetype m_endpoint = 0;
-    QByteArray m_buffer;
-    bool m_ready = false;
-    bool m_published = false;
-    bool m_idleTerminated = false;
-    QJsonObject m_lastMetadata;
-    qint64 m_lastPosition = 0;
-    qint64 m_lastUpdate = 0;
-    quint64 m_localArtworkInstanceId = 0;
-    int m_localArtworkIndex = 1;
+    QThread m_thread;
+    DiscordWorker *m_worker;
+    QTimer m_debounce;
+    /// the start of the song as last sent, to tell a seek from the clock running
+    qint64 m_sentStartMs = 0;
 };
 
-} // namespace swiftify
+} // namespace swifty

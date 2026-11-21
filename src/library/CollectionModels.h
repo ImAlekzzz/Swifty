@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,14 +19,14 @@
 
 #pragma once
 
-#include "spotify/SpotifyTypes.h"
+#include "core/MusicTypes.h"
 
 #include <QAbstractListModel>
 #include <QtQml/qqmlregistration.h>
 
 #include <algorithm>
 
-namespace swiftify {
+namespace swifty {
 
 /// the list behind a playlist, album or artist model, so each model below can
 /// derive from QAbstractListModel directly, where qml's tooling can see it.
@@ -65,7 +66,7 @@ private:
     QList<Item> m_items;
 };
 
-#define SWIFTIFY_ITEM_LIST_MODEL(Model, Item)                                                           \
+#define SWIFTY_ITEM_LIST_MODEL(Model, Item)                                                           \
 public:                                                                                               \
     using QAbstractListModel::QAbstractListModel;                                                     \
     int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : m_list.size(); } \
@@ -88,12 +89,12 @@ public:
 
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
-    Q_INVOKABLE swiftify::Playlist at(int row) const { return m_list.value(row); }
+    Q_INVOKABLE swifty::Playlist at(int row) const { return m_list.value(row); }
 
 signals:
     void countChanged();
 
-    SWIFTIFY_ITEM_LIST_MODEL(PlaylistListModel, Playlist)
+    SWIFTY_ITEM_LIST_MODEL(PlaylistListModel, Playlist)
 };
 
 class AlbumListModel : public QAbstractListModel {
@@ -107,12 +108,12 @@ public:
 
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
-    Q_INVOKABLE swiftify::Album at(int row) const { return m_list.value(row); }
+    Q_INVOKABLE swifty::Album at(int row) const { return m_list.value(row); }
 
 signals:
     void countChanged();
 
-    SWIFTIFY_ITEM_LIST_MODEL(AlbumListModel, Album)
+    SWIFTY_ITEM_LIST_MODEL(AlbumListModel, Album)
 };
 
 class ArtistListModel : public QAbstractListModel {
@@ -126,12 +127,12 @@ public:
 
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
-    Q_INVOKABLE swiftify::Artist at(int row) const { return m_list.value(row); }
+    Q_INVOKABLE swifty::Artist at(int row) const { return m_list.value(row); }
 
 signals:
     void countChanged();
 
-    SWIFTIFY_ITEM_LIST_MODEL(ArtistListModel, Artist)
+    SWIFTY_ITEM_LIST_MODEL(ArtistListModel, Artist)
 };
 
-} // namespace swiftify
+} // namespace swifty

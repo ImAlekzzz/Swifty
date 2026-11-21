@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // a song in the immersive queue (FullscreenQueueRow): its cover, name and
 // artists, and a speaker beside the one playing. the others play on click.
@@ -32,8 +33,6 @@ T.AbstractButton {
 
     enabled: !current
     hoverEnabled: true
-    // click focus would let other mouse buttons grab and press it
-    focusPolicy: Qt.TabFocus
     padding: 8
     leftPadding: 12
     rightPadding: 12
@@ -50,8 +49,6 @@ T.AbstractButton {
     }
 
     contentItem: Item {
-        opacity: root.song.isPlayable ? 1 : 0.38
-
         ArtworkImage {
             id: art
             anchors.left: parent.left
@@ -70,14 +67,13 @@ T.AbstractButton {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 3
 
-            ScrollingText {
+            StyledText {
                 width: parent.width
                 text: root.song.name
-                horizontalAlignment: Text.AlignLeft
+                elide: Text.ElideRight
                 font.pixelSize: Appearance.fontSize.small
                 font.weight: root.current ? Font.Bold : Font.DemiBold
                 color: root.current ? "white" : Qt.rgba(1, 1, 1, 0.84)
-                running: root.current || root.hovered
             }
             StyledText {
                 width: parent.width

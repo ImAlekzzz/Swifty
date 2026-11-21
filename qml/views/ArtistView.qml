@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,10 +20,11 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
-import Swiftify
+import Swifty
 
 // an artist (ArtistDetailView): top songs, then albums and singles
 Flickable {
+    WheelScroll {}
     id: root
 
     // pages run up under the top bar, which floats over them with no
@@ -74,36 +76,18 @@ Flickable {
                     wavy: true
                     symbol: "play_arrow"
                     burst: "play"
-                    text: qsTr("Play")
+                    text: "Play"
                     enabled: Library.artistTopSongs.count > 0
                     onClicked: Player.playFromModel(Library.artistTopSongs, 0)
                 }
             ]
         }
 
-        Item {
-            width: root.width
-            height: 240
-            Reveal.shown: Library.loadingArtist
-
-            Column {
-                anchors.centerIn: parent
-                spacing: 12
-                LoadingSpinner {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                }
-                StyledText {
-                    text: qsTr("Loading albums…")
-                    color: Appearance.colors.onSurfaceVariant
-                }
-            }
-        }
-
         TitleText {
             x: root.margin
             Reveal.shown: Library.artistTopSongs.count > 0
             bottomPadding: 10
-            text: qsTr("Top Songs")
+            text: "Top Songs"
             font.pixelSize: Appearance.fontSize.title
             font.weight: Font.Bold
         }
@@ -120,19 +104,18 @@ Flickable {
 
         TitleText {
             x: root.margin
-            Reveal.shown: !Library.loadingArtist
             topPadding: 28
             bottomPadding: 14
-            text: qsTr("Albums & Singles")
+            text: "Albums & Singles"
             font.pixelSize: Appearance.fontSize.title
             font.weight: Font.Bold
         }
 
         EmptyState {
             anchors.horizontalCenter: parent.horizontalCenter
-            Reveal.shown: !Library.loadingArtist && Library.artistAlbums.count === 0
+            Reveal.shown: Library.artistAlbums.count === 0
             symbol: "album"
-            title: qsTr("No Albums Found")
+            title: "No Albums Found"
         }
 
         Flow {

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // a navigation drawer row: material 3's pill indicator behind the selected
 // one, opening from the middle and going wavy under the pointer, its
@@ -30,7 +31,6 @@ T.AbstractButton {
 
     property string symbol
     property url artworkUrl
-    property string fallbackKey: text
     property bool selected: false
     property bool showArtwork: false
     /// the shape the icon sits on while selected
@@ -150,7 +150,6 @@ T.AbstractButton {
                 height: 24
                 radius: 5
                 source: root.artworkUrl
-                fallbackKey: root.fallbackKey
             }
 
             StyledText {

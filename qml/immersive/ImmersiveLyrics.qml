@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Effects
-import Swiftify
+import Swifty
 
 // the immersive lyrics (FullscreenLyrics): large bold lines, the sung one
 // bright and glowing in the cover's first colour, kept in the middle, the
@@ -44,7 +45,7 @@ Item {
             trackColor: Qt.rgba(1, 1, 1, 0.12)
         }
         StyledText {
-            text: qsTr("Loading lyrics…")
+            text: "Loading lyrics…"
             color: Qt.rgba(1, 1, 1, 0.7)
         }
     }
@@ -54,8 +55,8 @@ Item {
         Reveal.shown: !Player.loadingLyrics && !Player.hasLyrics
         scheme: root.scheme
         symbol: "lyrics"
-        title: qsTr("Lyrics Unavailable")
-        description: Player.lyricsMessage.length > 0 ? qsTranslate("Errors", Player.lyricsMessage) : UiState.catchphrase
+        title: "Lyrics Unavailable"
+        description: Player.lyricsMessage.length > 0 ? Player.lyricsMessage : UiState.catchphrase
     }
 
     ListView {
@@ -72,9 +73,6 @@ Item {
         // dragged past either end, it stretches and springs back
         boundsBehavior: Flickable.DragAndOvershootBounds
         cacheBuffer: 1200
-        // the fade hides lines scrolled past the edge, the clip keeps them
-        // from taking clicks meant for the top bar
-        clip: true
         // a step moves every line at once; each then springs from where it
         // was to its new place, the ones nearest the sung line first, so the
         // column arrives as a wave rather than a block
@@ -257,7 +255,7 @@ Item {
         footer: StyledText {
             leftPadding: 18
             topPadding: 46
-            text: qsTr("Lyrics provided by ") + Player.lyricsProvider
+            text: "Lyrics provided by " + Player.lyricsProvider
             font.pixelSize: Appearance.fontSize.smaller
             color: Qt.rgba(1, 1, 1, 0.4)
         }

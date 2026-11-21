@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a shelf's heading: a symbol on a shape, the title drawn round, and a
 // squiggle running on to "See All". hovering the heading turns the shape.
@@ -80,7 +81,7 @@ Item {
         visible: root.showsSeeAll
         variant: TextButton.Tonal
         symbol: "arrow_forward"
-        text: qsTr("See All")
+        text: "See All"
         iconOnly: root.width < titleText.x + titleText.implicitWidth + naturalWidth + 24
         compactSize: root.width < 280 ? 32 : 40
         onClicked: root.seeAll()

@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a title in end4's manner: google sans flex drawn fully round, a touch wide
 // and heavy through its variable axes, so headings read bubbly while body

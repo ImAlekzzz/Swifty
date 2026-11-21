@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +23,7 @@
 
 #include <cmath>
 
-namespace swiftify::themes {
+namespace swifty::themes {
 
 namespace {
 
@@ -148,6 +149,17 @@ const QList<Family> kFamilies {
       0xff61afef, 0xffc678dd, 0xff98c379, 0xffe06c75}},
 };
 
+// swifty's own, from a five-colour design: #010101, #4c1f18, #a04b23, #e8b176
+// and #fcf4e0. the dark theme is black and its browns with sand for the
+// accent, the light one cream with rust. the shades between the five are
+// blended from them, and every text colour reads at 4.5:1 or better on the page
+const Family kSwifty {
+    QStringLiteral("builtin"), QStringLiteral("Swifty"),
+    {0xfffefbf4, 0xfff8e5c9, 0xfffcf4e0, 0xfff6e0c0, 0xfff1cfa6, 0xffd2925d, 0xff2a120e, 0xff4c1f18, 0xff7e391f,
+     0xffa04b23, 0xff692e1c, 0xffb06135, 0xffb3261e},
+    {0xff010101, 0xff120806, 0xff26100c, 0xff3c1813, 0xff4c1f18, 0xff72331d, 0xfffcf4e0, 0xfff0cca0, 0xffc47e4c,
+     0xffe8b176, 0xffc07948, 0xffead2ba, 0xffff6b5b}};
+
 qreal linear(qreal channel)
 {
     return channel <= 0.04045 ? channel / 12.92 : std::pow((channel + 0.055) / 1.055, 2.4);
@@ -163,6 +175,11 @@ qreal relativeLuminance(const QColor &color)
 const QList<Family> &families()
 {
     return kFamilies;
+}
+
+const Family &swifty()
+{
+    return kSwifty;
 }
 
 const Family *find(const QString &id)
@@ -272,4 +289,4 @@ MaterialScheme::Roles roles(const Variant &variant, bool dark)
     return roles;
 }
 
-} // namespace swiftify::themes
+} // namespace swifty::themes

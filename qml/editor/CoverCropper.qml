@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // framing a picked photo as a square (CoverCropper): drag to move it, scroll,
 // pinch or slide to zoom, and the photo always covers the square. what it
@@ -68,7 +69,7 @@ StyledDialog {
         accept()
     }
 
-    headline: qsTr("Adjust Cover")
+    headline: "Adjust Cover"
 symbol: "crop"
 iconShape: "square"
     preferredWidth: viewport + 48
@@ -179,13 +180,13 @@ iconShape: "square"
 
     buttons: [
         TextButton {
-            text: qsTr("Use")
+            text: "Use"
             enabled: root.maker.photoValid
             onClicked: root.use()
         },
         TextButton {
             variant: TextButton.Text
-            text: qsTr("Cancel")
+            text: "Cancel"
             onClicked: root.close()
         }
     ]

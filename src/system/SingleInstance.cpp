@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,16 +22,40 @@
 #include <QDir>
 #include <QLocalSocket>
 
-namespace swiftify {
+namespace swifty {
+
+QString SingleInstance::commandFromLink(const QUrl &url)
+{
+    static const QStringList known {
+        QStringLiteral("raise"),     QStringLiteral("play-pause"),       QStringLiteral("next"),
+        QStringLiteral("previous"),  QStringLiteral("immersive"),        QStringLiteral("close-immersive"),
+        QStringLiteral("home"),      QStringLiteral("playlists"),        QStringLiteral("songs"),
+        QStringLiteral("favourites"), QStringLiteral("albums"),          QStringLiteral("artists"),
+        QStringLiteral("back"),      QStringLiteral("play-recent"),
+    };
+    if (url.scheme().compare(QLatin1StringView("swifty"), Qt::CaseInsensitive) != 0) {
+        return {};
+    }
+    // swifty://play-pause names it as the host, swifty:play-pause and swifty:///play-pause as the path
+    QString name = url.host();
+    if (name.isEmpty()) {
+        name = url.path();
+    }
+    name.remove(u'/');
+    name = name.trimmed().toLower();
+    return known.contains(name) ? name : QStringLiteral("raise");
+}
 
 QString SingleInstance::commandFrom(const QStringList &arguments)
 {
     for (const QString &argument : arguments.mid(1)) {
+        if (argument.startsWith(QLatin1StringView("swifty:"), Qt::CaseInsensitive)) {
+            return commandFromLink(QUrl(argument));
+        }
         if (argument == QLatin1StringView("--immersive")) return QStringLiteral("immersive");
         if (argument == QLatin1StringView("--play-pause")) return QStringLiteral("play-pause");
         if (argument == QLatin1StringView("--next")) return QStringLiteral("next");
         if (argument == QLatin1StringView("--previous")) return QStringLiteral("previous");
-        if (argument == QLatin1StringView("--stats")) return QStringLiteral("stats");
     }
     return QStringLiteral("raise");
 }
@@ -52,7 +77,7 @@ SingleInstance::SingleInstance(QObject *parent)
 
 QString SingleInstance::serverName()
 {
-    return QStringLiteral("swiftify-") + QDir::home().dirName();
+    return QStringLiteral("swifty-") + QDir::home().dirName();
 }
 
 bool SingleInstance::forwardToRunningInstance(const QStringList &arguments)
@@ -76,4 +101,4 @@ void SingleInstance::listen()
     m_server.listen(serverName());
 }
 
-} // namespace swiftify
+} // namespace swifty

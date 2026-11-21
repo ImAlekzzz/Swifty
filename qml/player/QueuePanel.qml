@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
-import Swiftify
+import Swifty
 
 // Playing Next (QueuePanel): the current song, then what follows. clicking a
 // row jumps to it.
@@ -32,13 +33,14 @@ Item {
         id: header
         x: 18
         y: 16
-        text: qsTr("Playing Next")
+        text: "Playing Next"
         font.pixelSize: Appearance.fontSize.normal
         font.weight: Font.DemiBold
         color: root.scheme.onSurfaceVariant
     }
 
     ListView {
+        WheelScroll {}
         id: list
         anchors.fill: parent
         anchors.topMargin: header.y + header.height + 10
@@ -59,7 +61,7 @@ Item {
             StyledText {
                 Reveal.shown: Player.hasSong
                 leftPadding: 6
-                text: qsTr("Now Playing")
+                text: "Now Playing"
                 font.pixelSize: Appearance.fontSize.smaller
                 font.weight: Font.Bold
                 color: root.scheme.onSurfaceVariant
@@ -76,7 +78,7 @@ Item {
                 leftPadding: 6
                 topPadding: 8
                 bottomPadding: 2
-                text: qsTr("Up Next")
+                text: "Up Next"
                 font.pixelSize: Appearance.fontSize.smaller
                 font.weight: Font.Bold
                 color: root.scheme.onSurfaceVariant
@@ -98,7 +100,7 @@ Item {
         width: parent.width - 32
         Reveal.shown: Player.upNext.count === 0
         symbol: "queue_music"
-        title: qsTr("Queue Empty")
+        title: "Queue Empty"
         description: UiState.catchphrase
     }
 }

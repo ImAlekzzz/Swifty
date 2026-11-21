@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the immersive player's backdrop (ArtworkBackdrop): the cover's palette
 // poured into a slow fluid that swells with the bass. the field is drawn

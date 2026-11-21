@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a top-bar button: bigger than an icon button, and lively. it sits on a
 // shape of its own, as the top bar has no background and the pages scroll up

@@ -113,7 +113,7 @@ pub fn write_tags(path: &Path, edits: &TagEdits, artwork: Option<&[u8]>) -> Resu
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let partial = directory.join(format!(".{name}.{}.swiftify-tags", std::process::id()));
+    let partial = directory.join(format!(".{name}.{}.swifty-tags", std::process::id()));
     let written = fs::copy(path, &partial)
         .map_err(|error| format!("could not copy {}: {error}", path.display()))
         .and_then(|_| {
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn a_tagged_file_says_what_it_is_and_how_long_it_runs() {
-        let directory = std::env::temp_dir().join(format!("swiftify-local-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("swifty-local-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("04 smooth.wav");
         tagged_wav(&path);
@@ -559,7 +559,7 @@ mod tests {
 
     #[test]
     fn a_file_without_embedded_lyrics_reads_as_empty() {
-        let directory = std::env::temp_dir().join(format!("swiftify-lyrics-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("swifty-lyrics-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("plain.wav");
         tagged_wav(&path);
@@ -571,7 +571,7 @@ mod tests {
 
     #[test]
     fn edits_are_written_into_the_file_and_read_back() {
-        let directory = std::env::temp_dir().join(format!("swiftify-edit-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("swifty-edit-{}", std::process::id()));
         let artwork = directory.join("artwork");
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("04 smooth.wav");
@@ -608,7 +608,7 @@ mod tests {
                 entry
                     .file_name()
                     .to_string_lossy()
-                    .ends_with(".swiftify-tags")
+                    .ends_with(".swifty-tags")
             })
             .collect();
         assert!(leftovers.is_empty());
@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn a_file_that_is_not_music_is_refused() {
         let path =
-            std::env::temp_dir().join(format!("swiftify-not-music-{}.mp3", std::process::id()));
+            std::env::temp_dir().join(format!("swifty-not-music-{}.mp3", std::process::id()));
         fs::write(&path, b"this is not an mp3").unwrap();
         assert!(read_tags(&path, None).is_err());
         fs::remove_file(&path).unwrap();

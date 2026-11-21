@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,15 +29,13 @@
 #include "render/SpectrumItem.h"
 #include "render/SpectrumShaping.h"
 #include "render/SpectrumSource.h"
-#include "spotify/CredentialStore.h"
-#include "spotify/SpotifySession.h"
 
 #include <QNetworkAccessManager>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
-using namespace swiftify;
+using namespace swifty;
 
 /// SpectrumRenderingTests.swift: peaks survive reduction, the layout budget
 /// holds at every window size, bars ease and rest, and paused bars stop.
@@ -134,13 +133,11 @@ private slots:
     void barsEaseUpThenRestWhenPaused()
     {
         QTemporaryDir directory;
-        Settings settings(directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(directory.filePath(QStringLiteral("swifty.conf")));
         ErrorCenter errors {nullptr};
-        MemoryCredentialStore credentials;
         QNetworkAccessManager network;
         testing::FakeCore core;
-        SpotifySession session(&core, &credentials, &network, &errors);
-        PlaybackController player(&core, &session, &settings, &errors);
+        PlaybackController player(&core, &settings, &errors);
         SpectrumSource source(&core, &player);
 
         SpectrumItem item;
@@ -172,17 +169,6 @@ private slots:
             QVERIFY(std::abs(levels[index] - levels[levels.size() - 1 - index]) < 0.001f);
         }
 
-        // a continuous band keeps its bars, bass on the left
-        item.setContinuous(true);
-        QCOMPARE(item.levels().size(), 48);
-        QCOMPARE(item.style().layout, SpectrumStyle::Layout::Ascending);
-        for (int frame = 0; frame < 40; ++frame) {
-            item.advance(1.0 / 60);
-        }
-        QVERIFY(item.levels().first() < item.levels().last());
-        item.setContinuous(false);
-        QCOMPARE(item.style().layout, SpectrumStyle::Layout::Mirrored);
-
         // garbage stays finite
         const float garbage[] = {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(), -1, 2};
         source.publish(garbage, 4);
@@ -209,13 +195,11 @@ private slots:
     void theBackdropFlowsOnlyWhilePlayingAndHoldsOnPause()
     {
         QTemporaryDir directory;
-        Settings settings(directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(directory.filePath(QStringLiteral("swifty.conf")));
         ErrorCenter errors {nullptr};
-        MemoryCredentialStore credentials;
         QNetworkAccessManager network;
         testing::FakeCore core;
-        SpotifySession session(&core, &credentials, &network, &errors);
-        PlaybackController player(&core, &session, &settings, &errors);
+        PlaybackController player(&core, &settings, &errors);
         SpectrumSource source(&core, &player);
         const QList<float> full(48, 0.5f);
         source.publish(full.constData(), 48);

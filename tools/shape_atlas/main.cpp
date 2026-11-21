@@ -42,7 +42,7 @@
 #include <memory>
 #include <vector>
 
-using namespace swiftify::shapeatlas;
+using namespace swifty::shapeatlas;
 
 namespace {
 

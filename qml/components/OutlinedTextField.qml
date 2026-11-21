@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a material outlined text field, with its label as the placeholder.
 Rectangle {
@@ -30,7 +31,6 @@ Rectangle {
     /// a description field starts this tall, and grows to maximumLines
     property int minimumLines: 1
     property alias inputItem: input
-    property bool tabChangesFocus: true
     signal accepted()
     signal textEdited()
 
@@ -56,46 +56,6 @@ Rectangle {
         wrapMode: root.maximumLines > 1 ? TextEdit.Wrap : TextEdit.NoWrap
         clip: true
         selectByMouse: true
-        activeFocusOnTab: true
-        Keys.onTabPressed: (event) => {
-            if (!root.tabChangesFocus) {
-                event.accepted = false
-                return
-            }
-            if (event.modifiers & Qt.ShiftModifier) {
-                let prev = root.KeyNavigation.backtab ? root.KeyNavigation.backtab : input.nextItemInFocusChain(false)
-                if (prev) {
-                    if (prev.inputItem) {
-                        prev = prev.inputItem
-                    }
-                    prev.forceActiveFocus(Qt.BacktabFocusReason)
-                    event.accepted = true
-                }
-                return
-            }
-            let next = root.KeyNavigation.tab ? root.KeyNavigation.tab : input.nextItemInFocusChain(true)
-            if (next) {
-                if (next.inputItem) {
-                    next = next.inputItem
-                }
-                next.forceActiveFocus(Qt.TabFocusReason)
-                event.accepted = true
-            }
-        }
-        Keys.onBacktabPressed: (event) => {
-            if (!root.tabChangesFocus) {
-                event.accepted = false
-                return
-            }
-            let prev = root.KeyNavigation.backtab ? root.KeyNavigation.backtab : input.nextItemInFocusChain(false)
-            if (prev) {
-                if (prev.inputItem) {
-                    prev = prev.inputItem
-                }
-                prev.forceActiveFocus(Qt.BacktabFocusReason)
-                event.accepted = true
-            }
-        }
         color: Appearance.colors.onSurface
         selectionColor: Appearance.colors.primary
         selectedTextColor: Appearance.colors.onPrimary

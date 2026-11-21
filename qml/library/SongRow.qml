@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // one song in a list (SongListRow): number or play glyph, artwork, title and
 // artists, the star and more buttons, and the time. hovered, the card grows
@@ -40,8 +41,6 @@ T.AbstractButton {
 
     implicitHeight: 58
     hoverEnabled: true
-    // click focus would let other mouse buttons grab and press it
-    focusPolicy: Qt.TabFocus
     // a few pixels wider whatever the row's width, over its neighbours. a
     // list puts its delegates and its header at 1; at rest a row stays
     // there, or the header's stickers would be drawn over it
@@ -144,7 +143,6 @@ T.AbstractButton {
             anchors.verticalCenter: parent.verticalCenter
             width: 44
             height: 44
-            opacity: root.song.isPlayable ? 1 : 0.38
 
             ArtworkImage {
                 anchors.fill: parent
@@ -162,13 +160,13 @@ T.AbstractButton {
                     delayed: true
                 }
                 anchors.fill: parent
-                active: (root.isCurrent && Settings.visualizersEnabled && Settings.trackListVisualizer) || showing
+                active: (root.isCurrent && Settings.visualizersEnabled) || showing
                 sourceComponent: Rectangle {
                     id: shade
 
                     property bool arrived: false
 
-                    Reveal.shown: arrived && root.isCurrent && Settings.visualizersEnabled && Settings.trackListVisualizer
+                    Reveal.shown: arrived && root.isCurrent && Settings.visualizersEnabled
                     radius: 6
                     color: Qt.rgba(0, 0, 0, 0.34)
                     Component.onCompleted: Qt.callLater(() => {
@@ -195,7 +193,6 @@ T.AbstractButton {
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             spacing: 3
-            opacity: root.song.isPlayable ? 1 : 0.38
 
             Row {
                 width: parent.width
@@ -270,15 +267,13 @@ T.AbstractButton {
                 symbol: "more_horiz"
                 size: 28
                 iconSize: 18
-                tooltip: qsTr("More")
+                tooltip: "More"
                 onClicked: SongMenus.open(root.song, root.allowsPlaylistRemoval)
             }
 
             IconButton {
                 id: star
                 anchors.verticalCenter: parent.verticalCenter
-                // a file of the person's own cannot be saved to spotify
-                visible: !root.song.isLocalFile
                 symbol: "star"
                 toggled: root.saved
                 size: 28
@@ -316,7 +311,7 @@ T.AbstractButton {
                     }
                 }
 
-                tooltip: root.saved ? qsTr("Remove from Favourite Songs") : qsTr("Add to Favourite Songs")
+                tooltip: root.saved ? "Remove from Favourites" : "Add to Favourites"
             }
 
         }

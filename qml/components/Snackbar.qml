@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the error banner (ErrorBanner in the swift app) as a material snackbar: an
 // error container with selectable text and a close button. it goes on its own
@@ -44,12 +45,11 @@ Item {
         ElementMoveSmall {}
     }
 
-    onSerialChanged: if (shown && visible) timer.restart()
+    onSerialChanged: if (shown) timer.restart()
 
     Timer {
         id: timer
         interval: 8000
-        running: root.shown && root.visible && !Session.evaluatingStoredLogin
         onTriggered: root.dismissed()
     }
 

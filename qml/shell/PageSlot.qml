@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // one step of the PageHost's stack: the page for a destination, built while
 // it is kept, and the cover a click on it sent flying to the next page's

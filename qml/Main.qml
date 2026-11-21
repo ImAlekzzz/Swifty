@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +21,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
 import Qt.labs.platform as Platform
-import Swiftify
+import Swifty
 
 // the main window: drawer, a content sheet with the top bar and the page, the
 // inspector beside it, and the player floating over the bottom.
@@ -28,22 +29,17 @@ ApplicationWindow {
     id: window
 
     property real sidebarWidth: 232
-    /// the window's size as its content lays out in it, smaller than the
-    /// window's own when zoomed in (ctrl +) and larger when zoomed out
-    readonly property real zoom: Settings.zoom
-    readonly property real layoutWidth: width / zoom
-    readonly property real layoutHeight: height / zoom
-    readonly property real effectiveSidebarWidth: Math.max(132, Math.min(sidebarWidth, layoutWidth * 0.28))
+    readonly property real effectiveSidebarWidth: Math.max(132, Math.min(sidebarWidth, width * 0.28))
     readonly property bool inAppWindowControls: !App.macOS && (App.windows ? !Settings.nativeTitleBar : Settings.showWindowControls)
     /// the strip the traffic lights sit in, kept clear above the sidebar
     readonly property real titleBarInset: App.macOS ? Math.max(28, shell.SafeArea.margins.top)
-                                                 : inAppWindowControls && !Settings.windowControlsOnRight ? 36 : 0
+                                                 : inAppWindowControls ? 36 : 0
 
     width: 1280
     height: 780
-    minimumWidth: Math.ceil(526 * zoom)
-    minimumHeight: Math.ceil(410 * zoom)
-    readonly property bool rightPanelFits: layoutWidth - effectiveSidebarWidth - Appearance.sizes.sideSheetWidth - 32 >= 404
+    minimumWidth: 526
+    minimumHeight: 410
+    readonly property bool rightPanelFits: width - effectiveSidebarWidth - Appearance.sizes.sideSheetWidth - 32 >= 404
 
     function closeCrowdedPanels() {
         if (!rightPanelFits) {
@@ -56,7 +52,7 @@ ApplicationWindow {
         target: Player
         function onPanelsChanged() { window.closeCrowdedPanels() }
     }
-    title: "Swiftify"
+    title: "Swifty"
     // on linux the app draws its whole frame. on macos the content runs under
     // a transparent title bar that keeps the traffic lights and nothing else.
     flags: App.macOS ? Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint
@@ -76,7 +72,6 @@ ApplicationWindow {
 
     Component.onCompleted: {
         if (App.windows) App.setNativeTitleBar(window, Settings.nativeTitleBar)
-        findZoomedItems()
     }
 
     Connections {
@@ -99,15 +94,23 @@ ApplicationWindow {
         window.requestActivate()
     }
 
-    // closing the window is not quitting: it hides, the music plays on, and
-    // the dock (or the tray) brings it back, as on any mac app. a quit (cmd-q,
-    // the dock's or the tray's) closes it for good. elsewhere, with nothing
-    // playing and no tray to come back from, closing it quits.
+    // files are likely to have been added while away from the window: coming
+    // back to it searches the folders again, if it has been a while
+    onActiveChanged: {
+        if (active) {
+            LocalFiles.rescanIfStale()
+        }
+    }
+
+    // on a mac or windows, closing the window is not quitting: it hides, the
+    // music plays on, and the dock (or the tray) brings it back. a quit
+    // (cmd-q, the dock's or the tray's) closes it for good. on linux, closing
+    // the window ends the program, so nothing is left running unseen
     onClosing: (close) => {
         if (App.quitting) {
             return
         }
-        if (App.macOS || App.windows || Player.playing || (Settings.trayIcon && App.trayAvailable)) {
+        if (App.macOS || App.windows) {
             close.accepted = false
             window.hide()
             App.trimMemory()
@@ -137,11 +140,6 @@ ApplicationWindow {
             // from the one before, as `true(...)`
             const dialog = deleteDialog.item as DeletePlaylistDialog
             dialog.ask(playlist)
-        }
-        function onCreatePlaylistRequested() {
-            playlistEditor.active = true
-            const editor = playlistEditor.item as PlaylistEditor
-            editor.openForCreate()
         }
         function onCreateLocalPlaylistRequested(first: var) {
             playlistEditor.active = true
@@ -177,7 +175,7 @@ ApplicationWindow {
     Connections {
         target: LocalFiles
         function onTracksAdded(playlistId: string, count: int, problem: string) {
-            const added = count > 0 ? qsTr("Tracks added: %1").arg(count) : ""
+            const added = count === 1 ? "Added 1 track." : count > 1 ? "Added " + count + " tracks." : ""
             const said = [added, problem].filter(part => part.length > 0).join(" ")
             if (said.length > 0) {
                 toast.show(said)
@@ -196,65 +194,18 @@ ApplicationWindow {
         target: window
     }
 
-    // the zoom scales the window's content and its overlay (the popups,
-    // menus and dialogs) from the top left corner, and lays each out at the
-    // window's size divided by it. qt sizes both to the window itself as it
-    // resizes, so each is set back whenever it changes
-    readonly property real zoomStep: 0.1
-    function setZoom(value: real) {
-        Settings.zoom = Math.round(Math.min(2, Math.max(0.5, value)) * 10) / 10
-        toast.show(qsTr("Zoom ") + Math.round(Settings.zoom * 100) + "%")
-    }
-    property list<Item> zoomedItems
-    function fitZoomed(item: Item) {
-        // worked out here rather than read off layoutWidth, whose binding
-        // has not caught up yet while the window's own size changes
-        const scale = Settings.zoom
-        item.transformOrigin = Item.TopLeft
-        item.scale = scale
-        if (Math.abs(item.width - width / scale) > 0.01) {
-            item.width = width / scale
-        }
-        if (Math.abs(item.height - height / scale) > 0.01) {
-            item.height = height / scale
-        }
-    }
-    function fitAllZoomed() {
-        for (const item of zoomedItems) {
-            fitZoomed(item)
-        }
-    }
-    onZoomChanged: fitAllZoomed()
-    onWidthChanged: fitAllZoomed()
-    onHeightChanged: fitAllZoomed()
-    Instantiator {
-        model: window.zoomedItems
-        delegate: Connections {
-            required property Item modelData
-            target: modelData
-            function onWidthChanged() { window.fitZoomed(modelData) }
-            function onHeightChanged() { window.fitZoomed(modelData) }
-        }
-    }
-    // the content's control and the overlay, the root item's children
-    function findZoomedItems() {
-        const root = contentItem.parent.parent
-        zoomedItems = root.children.filter(item => item === contentItem.parent || String(item).startsWith("QQuickOverlay"))
-        fitAllZoomed()
-    }
-
     Item {
         id: shell
         anchors.fill: parent
         // nothing under the opaque immersive player is drawn, or animates
-        visible: window.onScreen && !Session.evaluatingStoredLogin && window.immersiveReveal < 1
+        visible: window.onScreen && window.immersiveReveal < 1
 
         // the top edge moves the window, as a title bar would: the gutter
         // above the page and, on macos, the traffic lights' strip. it sits
         // under everything else, so it only gets what nothing above takes.
         Item {
             width: parent.width
-            height: Math.max(window.titleBarInset, window.inAppWindowControls ? 36 : 0) + 8
+            height: window.titleBarInset + 8
 
             DragHandler {
                 target: null
@@ -343,15 +294,13 @@ ApplicationWindow {
                 anchors.top: parent.top
                 window: window
                 backdropSource: pageContent
-                windowControlsOnRight: window.inAppWindowControls && Settings.windowControlsOnRight
-                inspectorShown: inspector.shown
             }
 
             Snackbar {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: topBar.bottom
                 anchors.topMargin: 4
-                message: qsTranslate("Errors", Errors.message)
+                message: Errors.message
                 serial: Errors.serial
                 onDismissed: Errors.clear()
             }
@@ -361,7 +310,6 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 12
                 width: Math.max(0, Math.min(720, sheet.width - 36))
-                Reveal.shown: !UiState.needsSetup
                 onImmersiveRequested: UiState.immersiveOpen = true
             }
         }
@@ -372,11 +320,11 @@ ApplicationWindow {
             id: inspector
             objectName: "mainInspector"
             readonly property bool shown: (Player.showingLyrics || Player.showingQueue) && !UiState.immersiveOpen
-                                          && !UiState.needsSetup && window.rightPanelFits
+                                          && window.rightPanelFits
             anchors.right: parent.right
             anchors.rightMargin: shown ? 8 : 0
             anchors.top: parent.top
-            anchors.topMargin: 8 + (window.inAppWindowControls && Settings.windowControlsOnRight ? 36 : 0)
+            anchors.topMargin: 8
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 8
             width: shown ? Appearance.sizes.sideSheetWidth : 0
@@ -414,7 +362,6 @@ ApplicationWindow {
         DropArea {
             id: musicDrop
             anchors.fill: parent
-            enabled: Session.libraryConnected
             onEntered: (drag) => drag.accepted = drag.hasUrls
             onDropped: (drop) => {
                 if (!drop.hasUrls) {
@@ -424,12 +371,12 @@ ApplicationWindow {
                 // onto a playlist made here, they are copied into it
                 if (Library.page === Library.Page.Playlist && Library.selectedPlaylist.isLocal) {
                     LocalFiles.addFiles(Library.selectedPlaylistId, drop.urls)
-                    toast.show(qsTr("Adding to “%1”…").arg(Library.selectedPlaylist.name))
+                    toast.show("Adding to “" + Library.selectedPlaylist.name + "”…")
                 } else if (LocalFiles.addSources(drop.urls) > 0) {
-                    Library.showLocalTracks()
-                    toast.show(qsTr("Looking for music…"))
+                    Library.showSongs()
+                    toast.show("Looking for music…")
                 } else {
-                    toast.show(qsTr("No new music there"))
+                    toast.show("No new music there")
                 }
             }
 
@@ -463,30 +410,10 @@ ApplicationWindow {
                     }
                     TitleText {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: qsTr("Add to Local Files")
+                        text: "Add to Local Files"
                         font.pixelSize: Appearance.fontSize.headline
                         color: Appearance.colors.onPrimaryContainer
                     }
-                }
-            }
-        }
-    }
-
-    // built for the start, and let go of once it has faded away. whether it
-    // still shows is passed on a moment later: read straight off the view,
-    // letting it go changed what decided to let it go, a binding loop
-    Loader {
-        id: startup
-        property bool fading: false
-        anchors.fill: parent
-        active: Session.evaluatingStoredLogin || fading
-        sourceComponent: StartupView {
-            Reveal.shown: Session.evaluatingStoredLogin
-            // held from when it is built until it has faded away
-            Component.onCompleted: startup.fading = true
-            onVisibleChanged: {
-                if (!visible) {
-                    Qt.callLater(() => startup.fading = Session.evaluatingStoredLogin)
                 }
             }
         }
@@ -692,9 +619,9 @@ ApplicationWindow {
     WindowControls {
         id: appWindowControls
         objectName: "appWindowControls"
-        x: Settings.windowControlsOnRight ? parent.width - width - 12 : 12
+        x: 12
         y: 8
-        visible: window.inAppWindowControls && window.visibility !== Window.FullScreen
+        visible: window.inAppWindowControls
         compact: true
         scheme: window.immersiveReveal > 0 ? PlayerStyle.darkScheme : Appearance.colors
         window: window
@@ -776,9 +703,7 @@ ApplicationWindow {
     Binding {
         target: Player
         property: "visualizerPresentationActive"
-        value: window.visible && (UiState.immersiveOpen
-               ? Settings.immersiveVisualizer || Settings.livingBackdrop
-               : Settings.playerBarVisualizer || Settings.trackListVisualizer)
+        value: window.visible
     }
 
     // closing the window leaves the music playing; the tray brings it back.
@@ -787,10 +712,10 @@ ApplicationWindow {
     Loader {
         active: App.trayAvailable && (Settings.trayIcon || (App.windows && !window.visible))
         sourceComponent: Platform.SystemTrayIcon {
-            objectName: "swiftifyTrayIcon"
+            objectName: "swiftyTrayIcon"
             visible: true
-            icon.source: "qrc:/qt/qml/Swiftify/resources/swiftify-icon.png"
-            tooltip: Player.hasSong ? Player.currentSong.name + " — " + Player.currentSong.artists : "Swiftify"
+            icon.source: "qrc:/qt/qml/Swifty/resources/swifty-icon.png"
+            tooltip: Player.hasSong ? Player.currentSong.name + " — " + Player.currentSong.artists : "Swifty"
             onActivated: (reason) => {
                 if (reason === Platform.SystemTrayIcon.Trigger || reason === Platform.SystemTrayIcon.DoubleClick) {
                     window.reveal()
@@ -799,24 +724,22 @@ ApplicationWindow {
 
             menu: Platform.Menu {
                 Platform.MenuItem {
-                    text: qsTr("Show Swiftify")
+                    text: "Show Swifty"
                     onTriggered: window.reveal()
                 }
                 Platform.MenuItem {
-                    text: Player.playing ? qsTr("Pause") : qsTr("Play")
+                    text: Player.playing ? "Pause" : "Play"
                     enabled: Player.hasSong
                     onTriggered: Player.togglePlayback()
                 }
                 Platform.MenuSeparator {}
                 Platform.MenuItem {
-                    text: qsTr("Quit Swiftify")
+                    text: "Quit Swifty"
                     onTriggered: App.quit()
                 }
             }
         }
     }
-
-    LoginDialog {}
 
     // dialogs seldom opened are built when asked for, and let go of once
     // they have closed
@@ -864,17 +787,14 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Left"; enabled: !App.macOS; onActivated: Player.skipBackward() }
     Shortcut { sequence: "Ctrl+Alt+Right"; enabled: !App.macOS; onActivated: Player.seekBy(10000) }
     Shortcut { sequence: "Ctrl+Alt+Left"; enabled: !App.macOS; onActivated: Player.seekBy(-10000) }
-    Shortcut { sequence: "Ctrl+Up"; enabled: !App.macOS && Session.connected; onActivated: Player.adjustVolume(0.05) }
-    Shortcut { sequence: "Ctrl+Down"; enabled: !App.macOS && Session.connected; onActivated: Player.adjustVolume(-0.05) }
-    Shortcut { sequence: "Ctrl+Alt+M"; enabled: !App.macOS && Session.connected; onActivated: Player.toggleMute() }
+    Shortcut { sequence: "Ctrl+Up"; enabled: !App.macOS; onActivated: Player.adjustVolume(0.05) }
+    Shortcut { sequence: "Ctrl+Down"; enabled: !App.macOS; onActivated: Player.adjustVolume(-0.05) }
+    Shortcut { sequence: "Ctrl+Alt+M"; enabled: !App.macOS; onActivated: Player.toggleMute() }
     Shortcut { sequence: "Ctrl+Alt+S"; enabled: !App.macOS && Player.hasSong; onActivated: Player.toggleShuffle() }
     Shortcut { sequence: "Ctrl+Alt+R"; enabled: !App.macOS && Player.hasSong; onActivated: Player.cycleRepeatMode() }
     Shortcut { sequence: "Ctrl+Alt+G"; onActivated: UiState.showCatchphrase("test") }
     Shortcut { sequence: "Ctrl+,"; enabled: !App.macOS; onActivated: UiState.settingsRequested() }
-
-    // StandardKey.Back is "Alt+Left" both on Windows and Linux. Both Shortcuts thus have the
-    // same key, which results in neither acting (see "Ctrl+..." Shortcuts)
-    Shortcut { sequence: "Alt+Left"; enabled: App.macOS; onActivated: Library.goBack() }
+    Shortcut { sequence: "Alt+Left"; onActivated: Library.goBack() }
     Shortcut { sequences: [StandardKey.Back]; enabled: !App.macOS; onActivated: Library.goBack() }
     // escape closes the page and goes back to the one before. an open menu
     // or dialog takes it first, the search field clears itself with it, and
@@ -884,28 +804,14 @@ ApplicationWindow {
         enabled: Library.canGoBack && !UiState.immersiveOpen
         onActivated: Library.goBack()
     }
-    TapHandler {
-        acceptedButtons: Qt.BackButton
-        enabled: Library.canGoBack && !UiState.immersiveOpen
-        onTapped: Library.goBack()
-    }
 
     Shortcut { sequences: [StandardKey.Find]; enabled: !App.macOS; onActivated: topBar.focusSearch() }
-
-    Shortcut { sequences: ["Ctrl+K", "Ctrl+L"]; enabled: !App.macOS; onActivated: topBar.openCatalogueSearch()}
-
-    // spelled out rather than StandardKey.ZoomIn, which holds ctrl + too: the
-    // same key twice in one shortcut is ambiguous, and neither acts
-    Shortcut { sequences: ["Ctrl++", "Ctrl+="]; onActivated: window.setZoom(window.zoom + window.zoomStep) }
-    Shortcut { sequences: ["Ctrl+-"]; onActivated: window.setZoom(window.zoom - window.zoomStep) }
-    Shortcut { sequence: "Ctrl+0"; onActivated: window.setZoom(1) }
 
     Loader {
         active: App.nativeMenuBar
         sourceComponent: MacMenuBar {
             window: window
             onFindRequested: topBar.focusSearch()
-            onCatalogueSearchRequested: topBar.openCatalogueSearch()
             // the settings first, if they are open over the window
             onCloseWindowRequested: {
                 const open = settings.item as SettingsDialog

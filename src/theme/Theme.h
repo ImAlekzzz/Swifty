@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,21 +31,21 @@
 class QQmlEngine;
 class QJSEngine;
 
-namespace swiftify {
+namespace swifty {
 
 class Settings;
 
 /// the app chrome's colours. with the "system" source it follows the scheme
 /// Matugen generates from the wallpaper, live; otherwise, or when no
 /// such file exists, or another source is chosen, it builds one from the
-/// swiftify accent or from one of the rice themes (Themes.h), light or dark as
+/// swifty accent or from one of the rice themes (Themes.h), light or dark as
 /// the theme mode says.
 class Theme : public QObject {
     Q_OBJECT
     QML_ELEMENT
     QML_SINGLETON
 
-    Q_PROPERTY(swiftify::MaterialScheme *colors READ colors CONSTANT FINAL)
+    Q_PROPERTY(swifty::MaterialScheme *colors READ colors CONSTANT FINAL)
     Q_PROPERTY(bool dark READ dark NOTIFY schemeChanged FINAL)
     Q_PROPERTY(bool usingSystemScheme READ usingSystemScheme NOTIFY schemeChanged FINAL)
     Q_PROPERTY(QString systemSchemePath READ systemSchemePath NOTIFY schemeChanged FINAL)
@@ -52,8 +53,8 @@ class Theme : public QObject {
     Q_PROPERTY(QString monoFontFamily READ monoFontFamily CONSTANT FINAL)
 
 public:
-    /// swiftify's accent, #ff3d8a (MusicStyle.accent)
-    static constexpr QRgb kAccent = 0xffff3d8a;
+    /// swifty's accent, rust #a04b23: seeds what has no theme colours of its own
+    static constexpr QRgb kAccent = 0xffa04b23;
 
     explicit Theme(Settings *settings, QObject *parent = nullptr);
     ~Theme() override;
@@ -75,7 +76,7 @@ public:
 
     /// every colour source the settings offer, as swatches in light or dark:
     /// Matugen's scheme, the app's own, then the rice themes
-    Q_INVOKABLE QList<swiftify::ThemeOption> themeOptions(bool dark) const;
+    Q_INVOKABLE QList<swifty::ThemeOption> themeOptions(bool dark) const;
     Q_INVOKABLE void refreshSystemScheme();
 
     Q_INVOKABLE static QColor mix(const QColor &a, const QColor &b, qreal amountOfA);
@@ -100,9 +101,6 @@ private:
     QString m_systemSchemePath;
     std::optional<MaterialScheme::Roles> m_systemRoles;
     QStringList m_schemeDirectories;
-    /// shells' scheme files that exist, watched themselves rather than their
-    /// folders, which the shells fill with other things all the time
-    QStringList m_schemeFiles;
 };
 
-} // namespace swiftify
+} // namespace swifty

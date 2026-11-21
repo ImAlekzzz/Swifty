@@ -24,7 +24,7 @@
 
 #include <algorithm>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
@@ -205,4 +205,4 @@ QSGNode *SoftShadowItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
     return node;
 }
 
-} // namespace swiftify
+} // namespace swifty

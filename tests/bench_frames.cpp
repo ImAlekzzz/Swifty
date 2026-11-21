@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,20 +38,18 @@
 #include <private/qsgrenderer_p.h>
 
 #include <cxxabi.h>
-#ifdef __APPLE__
 #include <mach/mach.h>
+#include <pthread.h>
 #include <sys/qos.h>
 #include <malloc/malloc.h>
-#endif
-#include <pthread.h>
 #include <ctime>
 #include <map>
 #include <utility>
 #include <vector>
 
-using namespace swiftify;
+using namespace swifty;
 using namespace Qt::StringLiterals;
-using swiftify::testing::ViewRig;
+using swifty::testing::ViewRig;
 
 namespace {
 
@@ -59,12 +58,10 @@ namespace {
 /// what the window draws. the window is built as main() builds it, around a
 /// library with covers, a song playing and visualizers on.
 
-#ifdef __APPLE__
 // what the render loop wraps each frame in on macos: metal's command buffers
 // and descriptors are autoreleased, and only a pool's end lets them go
 extern "C" void *objc_autoreleasePoolPush();
 extern "C" void objc_autoreleasePoolPop(void *pool);
-#endif
 
 double threadMs()
 {
@@ -90,7 +87,6 @@ private:
 /// the footprint activity monitor shows, and what of it is the heap
 QString memory()
 {
-#ifdef __APPLE__
     task_vm_info_data_t info {};
     mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
     task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&info), &count);
@@ -99,9 +95,6 @@ QString memory()
     return QStringLiteral("footprint %1 MB, heap in use %2 MB")
         .arg(double(info.phys_footprint) / 1048576.0, 0, 'f', 1)
         .arg(double(heap.size_in_use) / 1048576.0, 0, 'f', 1);
-#else
-    return QStringLiteral("footprint - MB, heap in use - MB");
-#endif
 }
 
 QStringList *capturedRenderLines = nullptr;
@@ -197,7 +190,7 @@ QString typeName(const QObject *object)
 bool isOwnComponent(const QObject *object)
 {
     const QString name = QString::fromLatin1(object->metaObject()->className());
-    return name.contains(QLatin1StringView("_QMLTYPE_")) || name.startsWith(QLatin1StringView("swiftify::"));
+    return name.contains(QLatin1StringView("_QMLTYPE_")) || name.startsWith(QLatin1StringView("swifty::"));
 }
 
 /// what draws: every item with contents, shown and inside the window, by
@@ -219,7 +212,7 @@ void countItems(QQuickItem *item, const QString &owner, const QRectF &window, st
 
 const char *kShell = R"(
 import QtQuick
-import Swiftify
+import Swifty
 
 Item {
     id: root
@@ -250,7 +243,7 @@ Item {
     }
 
     Component { id: home; HomeView {} }
-    Component { id: localFiles; LocalFilesView {} }
+    Component { id: albums; AlbumsView {} }
     Component { id: playlists; PlaylistsView {} }
 
     Loader {
@@ -303,7 +296,7 @@ Item {
             anchors.top: topBar.bottom
             anchors.bottom: parent.bottom
             clip: true
-            sourceComponent: [home, localFiles, playlists, null][root.page]
+            sourceComponent: [home, albums, playlists, null][root.page]
         }
         PlayerBar {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -454,10 +447,8 @@ private:
         QQuickRenderControl *control = rig.control.get();
         Cost cost;
         for (int frame = 0; frame < count; ++frame) {
-#ifdef __APPLE__
             void *pool = objc_autoreleasePoolPush();
             const auto drained = qScopeGuard([pool] { objc_autoreleasePoolPop(pool); });
-#endif
             driver.step();
             QCoreApplication::processEvents();
             // as the app's event loop would, which deletes what was let go of
@@ -504,17 +495,13 @@ private:
             next += 1000 / 60;
             if (wanted) {
                 wanted = false;
-#ifdef __APPLE__
                 void *pool = objc_autoreleasePoolPush();
-#endif
                 rig.control->polishItems();
                 rig.control->beginFrame();
                 rig.control->sync();
                 rig.control->render();
                 rig.control->endFrame();
-#ifdef __APPLE__
                 objc_autoreleasePoolPop(pool);
-#endif
                 ++drawn;
             }
         }
@@ -646,10 +633,8 @@ private:
 private slots:
     void initTestCase()
     {
-#ifdef __APPLE__
         // scheduled as the app's render thread is, on the fast cores
         pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-#endif
         // a line for every batch of every frame, formatted even when thrown
         // away: on only for counting, as it costs more than some frames
         if (qEnvironmentVariableIsSet("BENCH_BATCHES")) {
@@ -661,18 +646,14 @@ private slots:
         qputenv("QSG_TRANSIENT_IMAGES", "1");
         qputenv("QT_MAX_CACHED_GLYPH_SIZE", "512");
         previousHandler = qInstallMessageHandler(captureRenderer);
-#ifdef __APPLE__
         // the default the cocoa platform gives; the offscreen one names a
         // "Sans Serif" no mac has, and looking for it loads every font there
         // is to find out what else it might be called
         QGuiApplication::setFont(QFont(QStringLiteral(".AppleSystemUIFont"), 13));
-#endif
-        swiftify::fonts::loadIconFont();
-        swiftify::fonts::loadInterfaceFont();
+        swifty::fonts::loadIconFont();
+        swifty::fonts::loadInterfaceFont();
         qputenv("QT_QUICK_BACKEND", "rhi");
-#ifdef __APPLE__
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal);
-#endif
     }
 
     void mainWindow()

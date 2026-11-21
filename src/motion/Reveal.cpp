@@ -25,7 +25,7 @@
 
 #include <algorithm>
 
-namespace swiftify {
+namespace swifty {
 
 RevealAttached::RevealAttached(QObject *parent)
     : QObject(parent)
@@ -118,4 +118,4 @@ void RevealAttached::animate(bool shown)
     m_animation.start();
 }
 
-} // namespace swiftify
+} // namespace swifty

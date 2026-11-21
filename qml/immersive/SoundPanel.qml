@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // the immersive player's Sound panel (AudioShapingPanel): the equalizer, with
 // the live spectrum behind its curve, and tempo and pitch.
@@ -131,47 +132,12 @@ Item {
         Card {
             Item {
                 width: parent.width
-                height: 40
-                StyledText {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width - visualizerSwitch.width - 12
-                    text: qsTr("Full-screen player visualizer")
-                    wrapMode: Text.Wrap
-                    font.pixelSize: Appearance.fontSize.small
-                    font.weight: Font.DemiBold
-                    color: "white"
-                }
-                StyledSwitch {
-                    id: visualizerSwitch
-                    objectName: "immersiveVisualizerQuickSwitch"
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    scheme: root.scheme
-                    enabled: Settings.visualizersEnabled
-                    checked: Settings.immersiveVisualizer
-                    onToggled: Settings.immersiveVisualizer = checked
-                }
-            }
-            StyledText {
-                width: parent.width
-                visible: !Settings.visualizersEnabled
-                text: qsTr("Audio visualizers are disabled in Settings.")
-                wrapMode: Text.Wrap
-                font.pixelSize: Appearance.fontSize.smaller
-                color: root.secondaryText
-            }
-        }
-
-        Card {
-            Item {
-                width: parent.width
                 height: 32
 
                 StyledText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Crossfade")
+                    text: "Crossfade"
                     font.pixelSize: Appearance.fontSize.small
                     font.weight: Font.DemiBold
                     color: "white"
@@ -192,7 +158,7 @@ Item {
 
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Duration")
+                    text: "Duration"
                     font.pixelSize: Appearance.fontSize.smaller
                     color: root.secondaryText
                 }
@@ -200,7 +166,7 @@ Item {
                 StyledText {
                     id: durationValue
                     anchors.verticalCenter: parent.verticalCenter
-                    text: Settings.crossfadeDurationSeconds + qsTr(" s")
+                    text: Settings.crossfadeDurationSeconds + " s"
                     tabularNumbers: true
                     font.pixelSize: Appearance.fontSize.smaller
                     font.weight: Font.DemiBold
@@ -231,30 +197,7 @@ Item {
                 StyledText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Normalize volume")
-                    font.pixelSize: Appearance.fontSize.small
-                    font.weight: Font.DemiBold
-                    color: "white"
-                }
-                StyledSwitch {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    scheme: root.scheme
-                    checked: Settings.normalizeVolume
-                    onToggled: Settings.normalizeVolume = checked
-                }
-            }
-        }
-
-        Card {
-            Item {
-                width: parent.width
-                height: 32
-
-                StyledText {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Equalizer")
+                    text: "Equalizer"
                     font.pixelSize: Appearance.fontSize.small
                     font.weight: Font.DemiBold
                     color: "white"
@@ -285,9 +228,7 @@ Item {
 
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: Sound.activePresetName.length === 0 ? qsTr("Custom")
-                                    : Sound.isSavedPreset(Sound.activePresetName) ? Sound.activePresetName
-                                    : qsTranslate("Presets", Sound.activePresetName)
+                                text: Sound.activePresetName.length > 0 ? Sound.activePresetName : "Custom"
                                 font.pixelSize: Appearance.fontSize.smaller
                                 font.weight: Font.DemiBold
                                 color: "white"
@@ -311,53 +252,15 @@ Item {
                 }
             }
 
-            Row {
-                width: parent.width
-                height: 26
-                spacing: 8
-
-                StyledText {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Gain")
-                    font.pixelSize: Appearance.fontSize.smaller
-                    color: root.secondaryText
-                }
-                Item { width: Math.max(0, parent.width - gainSlider.width - gainValue.width - parent.spacing * 2); height: 1 }
-                StyledText {
-                    id: gainValue
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: (Sound.preampGain > 0 ? "+" : "") + Sound.preampGain.toFixed(1) + qsTr(" dB")
-                    tabularNumbers: true
-                    font.pixelSize: Appearance.fontSize.smaller
-                    font.weight: Font.DemiBold
-                    color: Math.abs(Sound.preampGain) > 0.01 ? root.accent : "white"
-                }
-            }
-            StyledSlider {
-                id: gainSlider
-                objectName: "immersivePreampGainSlider"
-                width: parent.width
-                scheme: root.scheme
-                from: -12
-                to: 12
-                stepSize: 0.5
-                value: Sound.preampGain
-                trackThickness: 10
-                snapMode: T.Slider.SnapAlways
-                onMoved: Sound.preampGain = value
-            }
-
             Item {
                 width: parent.width
                 height: 96
 
                 SpectrumView {
-                    objectName: "immersiveEqualizerSpectrum"
                     anchors.fill: parent
                     kind: SpectrumView.Equalizer
                     sensitivity: 0.85
-                    visible: Settings.visualizersEnabled && Settings.immersiveVisualizer
-                    active: visible && Player.playing
+                    active: Player.playing
                     opacity: Sound.equalizerEnabled ? 0.58 : 0.22
 
                     Behavior on opacity {
@@ -425,7 +328,7 @@ Item {
                 StyledText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Tempo & Pitch")
+                    text: "Tempo & Pitch"
                     font.pixelSize: Appearance.fontSize.small
                     font.weight: Font.DemiBold
                     color: "white"
@@ -436,7 +339,7 @@ Item {
                     variant: TextButton.Text
                     scheme: root.scheme
                     implicitHeight: 28
-                    text: qsTr("Reset")
+                    text: "Reset"
                     labelColor: root.secondaryText
                     opacity: root.tempoModified || root.pitchModified ? 1 : 0
                     enabled: opacity > 0.5
@@ -469,7 +372,7 @@ Item {
                 StyledText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Keep Original Pitch")
+                    text: "Keep Original Pitch"
                     color: "white"
                 }
                 StyledSwitch {
@@ -484,8 +387,8 @@ Item {
             StyledText {
                 width: parent.width
                 text: Sound.preservesPitch
-                    ? qsTr("speed changes the tempo only, not the key")
-                    : qsTr("speed also affects the key, js like sped up or slowed down songs are")
+                    ? "speed changes the tempo only, not the key"
+                    : "speed also affects the key, js like sped up or slowed down songs are"
                 wrapMode: Text.Wrap
                 font.pixelSize: Appearance.fontSize.smaller
                 color: root.secondaryText
@@ -532,7 +435,7 @@ Item {
         }
 
         StyledMenuItem {
-            text: qsTr("Custom")
+            text: "Custom"
             checkmark: true
             checked: true
             enabled: false
@@ -540,14 +443,14 @@ Item {
             height: visible ? implicitHeight : 0
         }
         StyledMenuItem {
-            text: qsTr("Save Current…")
+            text: "Save Current…"
             symbol: "save"
             enabled: !Sound.flat
             onTriggered: saveDialog.ask()
         }
         StyledMenuItem {
             readonly property string preset: Sound.activePresetName
-            text: qsTr("Delete “%1”").arg(preset)
+            text: "Delete “" + preset + "”"
             symbol: "delete"
             destructive: true
             visible: preset.length > 0 && Sound.isSavedPreset(preset)
@@ -555,15 +458,15 @@ Item {
             onTriggered: Sound.deletePreset(preset)
         }
         StyledMenuItem {
-            text: qsTr("Reset")
+            text: "Reset"
             symbol: "restart_alt"
-            enabled: !Sound.flat || Math.abs(Sound.preampGain) > 0.01
+            enabled: !Sound.flat
             onTriggered: Sound.reset()
         }
 
         StyledMenu {
             id: savedMenu
-            title: qsTr("Custom Presets")
+            title: "Custom Presets"
             enabled: presetMenu.savedPresets.length > 0
 
             // nothing else is in it, so a place in the list is its place here
@@ -589,7 +492,7 @@ Item {
             model: presetMenu.builtInPresets
             delegate: StyledMenuItem {
                 required property string modelData
-                text: qsTranslate("Presets", modelData)
+                text: modelData
                 checkmark: true
                 checked: modelData === Sound.activePresetName
                 onTriggered: Sound.applyPreset(modelData)
@@ -616,26 +519,26 @@ Item {
             }
         }
 
-        headline: qsTr("Save Preset")
+        headline: "Save Preset"
         symbol: "tune"
         iconShape: "flower"
 
         OutlinedTextField {
             id: name
             width: parent.width
-            placeholder: qsTr("Name")
+            placeholder: "Name"
             onAccepted: saveDialog.save()
         }
 
         buttons: [
             TextButton {
-                text: qsTr("Save")
+                text: "Save"
                 enabled: name.text.trim().length > 0
                 onClicked: saveDialog.save()
             },
             TextButton {
                 variant: TextButton.Text
-                text: qsTr("Cancel")
+                text: "Cancel"
                 onClicked: saveDialog.close()
             }
         ]

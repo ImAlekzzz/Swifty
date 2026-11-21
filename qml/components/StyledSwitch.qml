@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // the material 3 switch: the thumb grows when on, and squeezes while held.
 T.Switch {
@@ -30,16 +31,14 @@ T.Switch {
     implicitWidth: 52
     implicitHeight: 32
     hoverEnabled: true
-    // click focus would let other mouse buttons grab and press it
-    focusPolicy: Qt.TabFocus
     opacity: enabled ? 1 : 0.38
 
     indicator: Rectangle {
         anchors.fill: parent
         radius: height / 2
         color: root.checked ? root.scheme.primary : root.scheme.surfaceContainerHighest
-        border.width: root.visualFocus ? 2 : (root.checked ? 0 : 2)
-        border.color: root.visualFocus ? root.scheme.secondary : root.scheme.outline
+        border.width: root.checked ? 0 : 2
+        border.color: root.scheme.outline
 
         Behavior on color {
             ElementMoveFastColor {}

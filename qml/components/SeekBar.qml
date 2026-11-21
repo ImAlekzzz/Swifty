@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the seek line: a wave while playing, a slim track at rest, thicker with a
 // handle while hovered or dragged. a drag commits on release, and only for the

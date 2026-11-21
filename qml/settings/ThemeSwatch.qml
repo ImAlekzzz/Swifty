@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // one colour theme in the settings: a little window in its colours, with a
 // page, two lines of text and its three accents, and its name beneath. the
@@ -179,7 +180,7 @@ RippleButton {
         StyledText {
             width: root.width
             horizontalAlignment: Text.AlignHCenter
-            text: qsTranslate("Themes", root.option.name)
+            text: root.option.name
             elide: Text.ElideRight
             font.pixelSize: Appearance.fontSize.smaller
             font.weight: root.selected ? Font.DemiBold : Font.Normal

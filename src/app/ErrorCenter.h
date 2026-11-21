@@ -25,7 +25,7 @@
 class QQmlEngine;
 class QJSEngine;
 
-namespace swiftify {
+namespace swifty {
 
 /// the one error the app is showing, PlayerModel.errorMessage in the swift
 /// app. the banner dismisses itself after a while.
@@ -61,4 +61,4 @@ private:
     int m_serial = 0;
 };
 
-} // namespace swiftify
+} // namespace swifty

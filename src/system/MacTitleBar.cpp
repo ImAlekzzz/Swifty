@@ -22,7 +22,7 @@
 #include "system/macos/MacWindow.h"
 #endif
 
-namespace swiftify {
+namespace swifty {
 
 MacTitleBar::MacTitleBar(QObject *parent)
     : QObject(parent)
@@ -59,4 +59,4 @@ void MacTitleBar::apply()
 #endif
 }
 
-} // namespace swiftify
+} // namespace swifty

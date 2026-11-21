@@ -23,7 +23,7 @@
 
 #include <algorithm>
 
-using namespace swiftify;
+using namespace swifty;
 
 class PaletteTest : public QObject {
     Q_OBJECT

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,11 +32,11 @@
 
 class QNetworkAccessManager;
 
-namespace swiftify {
+namespace swifty {
 
 /// cover art, fetched once and kept (ArtworkDataRepository.swift).
 ///
-/// encoded bytes come through a disk cache under ~/.cache/Swiftify and a small
+/// encoded bytes come through a disk cache under ~/.cache/Swifty and a small
 /// memory cache; requests for the same url share one download. decoded images
 /// are cached per size bucket, decoded off the gui thread straight at the size
 /// they are shown, never at the full size spotify serves.
@@ -77,4 +78,4 @@ public:
     QQuickImageResponse *requestImageResponse(const QString &id, const QSize &requestedSize) override;
 };
 
-} // namespace swiftify
+} // namespace swifty

@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a titled group of settings on a tonal card, as end4's settings app lays
 // them out.

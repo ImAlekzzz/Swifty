@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 StyledDialog {
     id: root
@@ -30,15 +31,14 @@ StyledDialog {
         open()
     }
 
-    headline: qsTr("Delete “%1”?").arg(playlist.name)
+    headline: "Delete “" + playlist.name + "”?"
 symbol: "delete"
 iconShape: "ghostish"
-    body: playlist.isLocal ? qsTr("This deletes the playlist from this computer. Its music files stay where they are.")
-                           : qsTr("This removes the playlist from your Spotify library.")
+    body: "This deletes the playlist from this computer. Its music files stay where they are."
 
     buttons: [
         TextButton {
-            text: qsTr("Delete Playlist")
+            text: "Delete Playlist"
             colBackground: Appearance.colors.error
             colBackgroundHover: Appearance.colors.errorHover
             labelColor: Appearance.colors.onError
@@ -49,7 +49,7 @@ iconShape: "ghostish"
         },
         TextButton {
             variant: TextButton.Text
-            text: qsTr("Cancel")
+            text: "Cancel"
             onClicked: root.close()
         }
     ]

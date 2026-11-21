@@ -20,7 +20,7 @@
 
 #include "render/SpectrumSource.h"
 
-namespace swiftify {
+namespace swifty {
 
 BackdropClock::BackdropClock(QObject *parent)
     : QObject(parent)
@@ -91,4 +91,4 @@ void BackdropClock::tick()
     emit frame();
 }
 
-} // namespace swiftify
+} // namespace swifty

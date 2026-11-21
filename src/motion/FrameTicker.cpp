@@ -18,7 +18,7 @@
 
 #include "motion/FrameTicker.h"
 
-namespace swiftify {
+namespace swifty {
 
 FrameTicker *FrameTicker::instance()
 {
@@ -66,4 +66,4 @@ void FrameTicker::update()
     }
 }
 
-} // namespace swiftify
+} // namespace swifty

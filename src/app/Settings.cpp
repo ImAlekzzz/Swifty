@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,20 +18,13 @@
  */
 
 #include "app/Settings.h"
-#include "app/ErrorCenter.h"
-#include "app/Logging.h"
-#include "app/Paths.h"
-#include "app/Translations.h"
 
-#include <QDesktopServices>
 #include <QQmlEngine>
-#include <QRegularExpression>
-#include <QUrl>
 
 #include <algorithm>
 #include <initializer_list>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
@@ -39,11 +33,6 @@ Settings *s_instance = nullptr;
 QString oneOf(const QString &value, std::initializer_list<QString> allowed, const QString &fallback)
 {
     return std::find(allowed.begin(), allowed.end(), value) != allowed.end() ? value : fallback;
-}
-
-int quality(int kbps, int fallback)
-{
-    return kbps == 96 || kbps == 160 || kbps == 320 ? kbps : fallback;
 }
 
 template <typename T>
@@ -57,8 +46,8 @@ T stored(const QSettings &store, const char *key, const T &fallback)
 
 Settings::Settings(QObject *parent)
     : QObject(parent)
-    , m_store(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("Swiftify"),
-              QStringLiteral("Swiftify"))
+    , m_store(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("Swifty"),
+              QStringLiteral("Swifty"))
 {
     load();
     if (!s_instance) {
@@ -124,11 +113,7 @@ void Settings::sync()
 void Settings::load()
 {
     m_visualizersEnabled = stored<bool>(m_store, "visualizersEnabled", m_visualizersEnabled);
-    m_playerBarVisualizer = stored<bool>(m_store, "playerBarVisualizer", m_playerBarVisualizer);
-    m_trackListVisualizer = stored<bool>(m_store, "trackListVisualizer", m_trackListVisualizer);
-    m_immersiveVisualizer = stored<bool>(m_store, "immersiveVisualizer", m_immersiveVisualizer);
     m_circularVisualizer = stored<bool>(m_store, "circularVisualizer", m_circularVisualizer);
-    m_continuousVisualizer = stored<bool>(m_store, "continuousVisualizer", m_continuousVisualizer);
     m_roundArtwork = stored<bool>(m_store, "roundArtwork", m_roundArtwork);
     {
         const QString raw = stored<QString>(m_store, "circularVisualizerShape", m_visualizerShape);
@@ -138,16 +123,6 @@ void Settings::load()
         const double raw = stored<double>(m_store, "visualizerSensitivity", m_visualizerSensitivity);
         m_visualizerSensitivity = std::clamp(raw, 0.6, 1.8);
     }
-    {
-        const int raw = stored<int>(m_store, "streamingQuality", m_streamingQuality);
-        m_streamingQuality = quality(raw, 160);
-        const int cache = stored<int>(m_store, "songCacheMegabytes", m_songCacheMegabytes);
-        m_songCacheMegabytes = cache == 500 || cache == 2000 ? cache : 1000;
-    }
-    m_normalizeVolume = stored<bool>(m_store, "normalizeVolume", m_normalizeVolume);
-    m_crossfadeEnabled = stored<bool>(m_store, "crossfadeEnabled", m_crossfadeEnabled);
-    m_crossfadeDurationSeconds = std::clamp(
-        stored<int>(m_store, "crossfadeDurationSeconds", m_crossfadeDurationSeconds), 1, 12);
     m_livingBackdrop = stored<bool>(m_store, "livingBackdrop", m_livingBackdrop);
     {
         const double raw = stored<double>(m_store, "backdropBlur", m_backdropBlur);
@@ -158,7 +133,6 @@ void Settings::load()
         m_backdropReactivity = std::clamp(raw, 0.0, 3.0);
     }
     m_debuggingEnabled = stored<bool>(m_store, "debuggingEnabled", m_debuggingEnabled);
-    m_loggingEnabled = stored<bool>(m_store, "loggingEnabled", m_loggingEnabled);
     m_pinnedPlaylistsExpanded = stored<bool>(m_store, "pinnedPlaylistsExpanded", m_pinnedPlaylistsExpanded);
     m_allPlaylistsExpanded = stored<bool>(m_store, "allPlaylistsExpanded", m_allPlaylistsExpanded);
     {
@@ -188,37 +162,13 @@ void Settings::load()
         m_matugenColorsPath = raw.trimmed();
     }
     m_showWindowControls = stored<bool>(m_store, "showWindowControls", m_showWindowControls);
-    m_windowControlsOnRight = stored<bool>(m_store, "windowControlsOnRight", m_windowControlsOnRight);
-    if (const QString source = stored<QString>(m_store, "statsSource", m_statsSource);
-        source == QLatin1StringView("statsfm") || source == QLatin1StringView("local")) {
-        m_statsSource = source;
-    }
-    m_statsFmUsername = stored<QString>(m_store, "statsFmUsername", m_statsFmUsername).trimmed();
-    m_trackListening = stored<bool>(m_store, "trackListening", m_trackListening);
     m_nativeTitleBar = stored<bool>(m_store, "nativeTitleBar", m_nativeTitleBar);
     m_trayIcon = stored<bool>(m_store, "trayIcon", m_trayIcon);
-    m_zoom = std::clamp(stored<double>(m_store, "zoom", m_zoom), 0.5, 2.0);
-    m_discordEnabled = stored<bool>(m_store, "discordEnabled", false);
-    const QString id = stored<QString>(m_store, "discordApplicationId", {}).trimmed();
-    if (QRegularExpression(QStringLiteral("^[0-9]{17,20}$")).match(id).hasMatch()) {
-        m_discordApplicationId = id;
-    }
-    const QString configuredLanguage = oneOf(
-        stored<QString>(m_store, "language", m_language),
-        {QStringLiteral("system"), QStringLiteral("en"), QStringLiteral("ru"), QStringLiteral("de")},
-        QStringLiteral("system"));
-    if (!Translations::isLanguageEnabled(configuredLanguage)) {
-        m_language = QStringLiteral("en");
-        m_store.setValue(QStringLiteral("language"), m_language);
-        m_revertedDisabledLanguage = true;
-        if (auto *errors = ErrorCenter::instance()) {
-            errors->show(Translations::disabledLanguageErrorMessage());
-            m_revertedDisabledLanguage = false;
-        }
-    } else {
-        m_language = configuredLanguage;
-    }
-
+    m_onlineLyrics = stored<bool>(m_store, "onlineLyrics", m_onlineLyrics);
+    m_onlineArtistImages = stored<bool>(m_store, "onlineArtistImages", m_onlineArtistImages);
+    m_discogsToken = stored<QString>(m_store, "discogsToken", m_discogsToken).trimmed();
+    m_discordPresence = stored<bool>(m_store, "discordPresence", m_discordPresence);
+    m_discordClientId = stored<QString>(m_store, "discordClientId", m_discordClientId).trimmed();
 }
 
 void Settings::setVisualizersEnabled(bool value)
@@ -231,36 +181,6 @@ void Settings::setVisualizersEnabled(bool value)
     emit visualizersEnabledChanged();
 }
 
-void Settings::setPlayerBarVisualizer(bool value)
-{
-    if (m_playerBarVisualizer == value) {
-        return;
-    }
-    m_playerBarVisualizer = value;
-    m_store.setValue(QStringLiteral("playerBarVisualizer"), value);
-    emit playerBarVisualizerChanged();
-}
-
-void Settings::setTrackListVisualizer(bool value)
-{
-    if (m_trackListVisualizer == value) {
-        return;
-    }
-    m_trackListVisualizer = value;
-    m_store.setValue(QStringLiteral("trackListVisualizer"), value);
-    emit trackListVisualizerChanged();
-}
-
-void Settings::setImmersiveVisualizer(bool value)
-{
-    if (m_immersiveVisualizer == value) {
-        return;
-    }
-    m_immersiveVisualizer = value;
-    m_store.setValue(QStringLiteral("immersiveVisualizer"), value);
-    emit immersiveVisualizerChanged();
-}
-
 void Settings::setCircularVisualizer(bool value)
 {
     if (m_circularVisualizer == value) {
@@ -269,16 +189,6 @@ void Settings::setCircularVisualizer(bool value)
     m_circularVisualizer = value;
     m_store.setValue(QStringLiteral("circularVisualizer"), value);
     emit circularVisualizerChanged();
-}
-
-void Settings::setContinuousVisualizer(bool value)
-{
-    if (m_continuousVisualizer == value) {
-        return;
-    }
-    m_continuousVisualizer = value;
-    m_store.setValue(QStringLiteral("continuousVisualizer"), value);
-    emit continuousVisualizerChanged();
 }
 
 void Settings::setRoundArtwork(bool value)
@@ -311,59 +221,6 @@ void Settings::setVisualizerSensitivity(double raw)
     m_visualizerSensitivity = value;
     m_store.setValue(QStringLiteral("visualizerSensitivity"), value);
     emit visualizerSensitivityChanged();
-}
-
-void Settings::setStreamingQuality(int raw)
-{
-    const int value = quality(raw, 160);
-    if (m_streamingQuality == value) {
-        return;
-    }
-    m_streamingQuality = value;
-    m_store.setValue(QStringLiteral("streamingQuality"), value);
-    emit streamingQualityChanged();
-}
-
-void Settings::setNormalizeVolume(bool value)
-{
-    if (m_normalizeVolume == value) {
-        return;
-    }
-    m_normalizeVolume = value;
-    m_store.setValue(QStringLiteral("normalizeVolume"), value);
-    emit normalizeVolumeChanged();
-}
-
-void Settings::setSongCacheMegabytes(int megabytes)
-{
-    const int value = megabytes == 500 || megabytes == 2000 ? megabytes : 1000;
-    if (m_songCacheMegabytes == value) {
-        return;
-    }
-    m_songCacheMegabytes = value;
-    m_store.setValue(QStringLiteral("songCacheMegabytes"), value);
-    emit songCacheMegabytesChanged();
-}
-
-void Settings::setCrossfadeEnabled(bool value)
-{
-    if (m_crossfadeEnabled == value) {
-        return;
-    }
-    m_crossfadeEnabled = value;
-    m_store.setValue(QStringLiteral("crossfadeEnabled"), value);
-    emit crossfadeEnabledChanged();
-}
-
-void Settings::setCrossfadeDurationSeconds(int raw)
-{
-    const int value = std::clamp(raw, 1, 12);
-    if (m_crossfadeDurationSeconds == value) {
-        return;
-    }
-    m_crossfadeDurationSeconds = value;
-    m_store.setValue(QStringLiteral("crossfadeDurationSeconds"), value);
-    emit crossfadeDurationSecondsChanged();
 }
 
 void Settings::setLivingBackdrop(bool value)
@@ -523,47 +380,6 @@ void Settings::setShowWindowControls(bool value)
     emit showWindowControlsChanged();
 }
 
-void Settings::setWindowControlsOnRight(bool value)
-{
-    if (m_windowControlsOnRight == value) {
-        return;
-    }
-    m_windowControlsOnRight = value;
-    m_store.setValue(QStringLiteral("windowControlsOnRight"), value);
-    emit windowControlsOnRightChanged();
-}
-
-void Settings::setStatsSource(const QString &value)
-{
-    if (m_statsSource == value || (value != QLatin1StringView("statsfm") && value != QLatin1StringView("local"))) {
-        return;
-    }
-    m_statsSource = value;
-    m_store.setValue(QStringLiteral("statsSource"), value);
-    emit statsSourceChanged();
-}
-
-void Settings::setStatsFmUsername(const QString &value)
-{
-    const QString trimmed = value.trimmed();
-    if (m_statsFmUsername == trimmed) {
-        return;
-    }
-    m_statsFmUsername = trimmed;
-    m_store.setValue(QStringLiteral("statsFmUsername"), trimmed);
-    emit statsFmUsernameChanged();
-}
-
-void Settings::setTrackListening(bool value)
-{
-    if (m_trackListening == value) {
-        return;
-    }
-    m_trackListening = value;
-    m_store.setValue(QStringLiteral("trackListening"), value);
-    emit trackListeningChanged();
-}
-
 void Settings::setNativeTitleBar(bool value)
 {
     if (m_nativeTitleBar == value) {
@@ -572,6 +388,58 @@ void Settings::setNativeTitleBar(bool value)
     m_nativeTitleBar = value;
     m_store.setValue(QStringLiteral("nativeTitleBar"), value);
     emit nativeTitleBarChanged();
+}
+
+void Settings::setOnlineArtistImages(bool value)
+{
+    if (m_onlineArtistImages == value) {
+        return;
+    }
+    m_onlineArtistImages = value;
+    m_store.setValue(QStringLiteral("onlineArtistImages"), value);
+    emit onlineArtistImagesChanged();
+}
+
+void Settings::setDiscogsToken(const QString &raw)
+{
+    const QString value = raw.trimmed();
+    if (m_discogsToken == value) {
+        return;
+    }
+    m_discogsToken = value;
+    m_store.setValue(QStringLiteral("discogsToken"), value);
+    emit discogsTokenChanged();
+}
+
+void Settings::setDiscordPresence(bool value)
+{
+    if (m_discordPresence == value) {
+        return;
+    }
+    m_discordPresence = value;
+    m_store.setValue(QStringLiteral("discordPresence"), value);
+    emit discordPresenceChanged();
+}
+
+void Settings::setDiscordClientId(const QString &raw)
+{
+    const QString value = raw.trimmed();
+    if (m_discordClientId == value) {
+        return;
+    }
+    m_discordClientId = value;
+    m_store.setValue(QStringLiteral("discordClientId"), value);
+    emit discordClientIdChanged();
+}
+
+void Settings::setOnlineLyrics(bool value)
+{
+    if (m_onlineLyrics == value) {
+        return;
+    }
+    m_onlineLyrics = value;
+    m_store.setValue(QStringLiteral("onlineLyrics"), value);
+    emit onlineLyricsChanged();
 }
 
 void Settings::setTrayIcon(bool value)
@@ -584,128 +452,4 @@ void Settings::setTrayIcon(bool value)
     emit trayIconChanged();
 }
 
-void Settings::setZoom(double raw)
-{
-    const double value = std::clamp(raw, 0.5, 2.0);
-    if (qFuzzyCompare(m_zoom, value)) {
-        return;
-    }
-    m_zoom = value;
-    m_store.setValue(QStringLiteral("zoom"), value);
-    emit zoomChanged();
-}
-
-
-void Settings::setDiscordEnabled(bool value)
-{
-    if (m_discordEnabled == value) return;
-    m_discordEnabled = value;
-    m_store.setValue(QStringLiteral("discordEnabled"), value);
-    emit discordEnabledChanged();
-}
-
-void Settings::setDiscordApplicationId(const QString &raw)
-{
-    const QString value = raw.trimmed();
-    if (!value.isEmpty() && !QRegularExpression(QStringLiteral("^[0-9]{17,20}$")).match(value).hasMatch()) return;
-    if (m_discordApplicationId == value) return;
-    m_discordApplicationId = value;
-    m_store.setValue(QStringLiteral("discordApplicationId"), value);
-    emit discordApplicationIdChanged();
-}
-void Settings::setLanguage(const QString &raw)
-{
-    QString value = oneOf(raw, {QStringLiteral("system"), QStringLiteral("en"), QStringLiteral("ru"), QStringLiteral("de")}, QStringLiteral("system"));
-    if (!Translations::isLanguageEnabled(value)) {
-        value = QStringLiteral("en");
-    }
-    if (m_language == value) return;
-    m_language = value;
-    m_store.setValue(QStringLiteral("language"), value);
-    emit languageChanged();
-}
-
-bool Settings::isRussianEnabled() const
-{
-    return Translations::isLanguageEnabled(QStringLiteral("ru"));
-}
-
-bool Settings::isGermanEnabled() const
-{
-    return Translations::isLanguageEnabled(QStringLiteral("de"));
-}
-
-QString Settings::disabledLanguageMessage() const
-{
-    return Translations::disabledLanguageMessage();
-}
-
-bool Settings::isLanguageEnabled(const QString &language) const
-{
-    return Translations::isLanguageEnabled(language);
-}
-
-void Settings::enforceEnabledLanguage()
-{
-    const bool reverted = !Translations::isLanguageEnabled(m_language);
-    if (reverted) {
-        m_language = QStringLiteral("en");
-        m_store.setValue(QStringLiteral("language"), m_language);
-        m_revertedDisabledLanguage = true;
-        if (auto *errors = ErrorCenter::instance()) {
-            errors->show(Translations::disabledLanguageErrorMessage());
-            m_revertedDisabledLanguage = false;
-        }
-    }
-    emit languageAvailabilityChanged();
-    if (reverted) {
-        emit languageChanged();
-    }
-}
-
-bool Settings::takeRevertedDisabledLanguage()
-{
-    const bool reverted = m_revertedDisabledLanguage;
-    m_revertedDisabledLanguage = false;
-    return reverted;
-}
-
-void Settings::setLoggingEnabled(bool value)
-{
-    if (m_loggingEnabled == value) {
-        return;
-    }
-    m_loggingEnabled = value;
-    m_store.setValue(QStringLiteral("loggingEnabled"), value);
-    if (value) {
-        logging::applyEnvironmentVariables();
-    }
-    emit loggingEnabledChanged();
-}
-
-bool Settings::isLoggingActive() const
-{
-    return logging::isActive();
-}
-
-QString Settings::logDirectory() const
-{
-    return paths::logDirectory();
-}
-
-QString Settings::logFilePath() const
-{
-    return paths::logFilePath();
-}
-
-void Settings::openLogsFolder() const
-{
-    QDesktopServices::openUrl(QUrl::fromLocalFile(paths::logDirectory()));
-}
-
-void Settings::openLogFile() const
-{
-    QDesktopServices::openUrl(QUrl::fromLocalFile(paths::logFilePath()));
-}
-
-} // namespace swiftify
+} // namespace swifty

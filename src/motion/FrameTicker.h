@@ -23,7 +23,7 @@
 #include <QSet>
 #include <QTimer>
 
-namespace swiftify {
+namespace swifty {
 
 /// one 30 hz tick shared by everything that moves slowly and for as long as
 /// music plays: the shapes that turn (AmbientClock). it runs while anything
@@ -54,4 +54,4 @@ private:
     QSet<QObject *> m_subscribers;
 };
 
-} // namespace swiftify
+} // namespace swifty

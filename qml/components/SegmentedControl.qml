@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // material 3 segmented buttons, drawn the way end4 draws its tab groups: a
 // pill track, and the choice as a filled pill that slides to the chosen
@@ -51,19 +52,16 @@ Item {
     // straight there, and so does a choice its owner settles as it is built
     // (the immersive player picks its panel in its own onCompleted): until
     // everything built with it has completed, nothing has been seen to move
-    property Item selectedSegment: null
     property bool built: false
     property bool sliding: false
     property int placedIndex: -1
     Component.onCompleted: {
         placedIndex = currentIndex
-        selectedSegment = currentIndex >= 0 ? repeater.itemAt(currentIndex) : null
         Qt.callLater(() => root.built = true)
     }
     onCurrentIndexChanged: {
         sliding = built && placedIndex >= 0 && currentIndex >= 0
         placedIndex = currentIndex
-        selectedSegment = currentIndex >= 0 ? repeater.itemAt(currentIndex) : null
     }
 
     Rectangle {
@@ -114,31 +112,13 @@ Item {
                     ripple.release()
                 }
             }
-
-            MouseArea {
-                id: disabledHover
-                anchors.fill: parent
-                enabled: tint.segment !== null && !tint.segment.enabled && tint.segment.tooltip.length > 0
-                hoverEnabled: enabled
-                acceptedButtons: Qt.NoButton
-            }
-
-            Loader {
-                anchors.fill: parent
-                active: disabledHover.containsMouse && disabledHover.enabled
-                sourceComponent: StyledToolTip {
-                    visible: true
-                    text: tint.segment ? tint.segment.tooltip : ""
-                }
-            }
         }
     }
 
     Rectangle {
         id: indicator
-        objectName: "selectionIndicator"
 
-        readonly property Item target: root.selectedSegment
+        readonly property Item target: repeater.count > 0 ? repeater.itemAt(root.currentIndex) : null
 
         visible: target !== null
         x: target ? row.x + target.x : 0
@@ -166,12 +146,6 @@ Item {
         Repeater {
             id: repeater
             model: root.segments
-            onItemAdded: (index, item) => {
-                if (index === root.currentIndex) root.selectedSegment = item
-            }
-            onItemRemoved: (index, item) => {
-                if (root.selectedSegment === item) root.selectedSegment = null
-            }
 
             delegate: RippleButton {
                 id: segment
@@ -198,18 +172,15 @@ Item {
                 onClicked: root.activated(index)
 
                 contentItem: Item {
-                    implicitWidth: content.naturalWidth
+                    implicitWidth: content.implicitWidth
                     implicitHeight: content.implicitHeight
 
                     Row {
                         id: content
-                        readonly property real naturalWidth: label.implicitWidth + (symbol.visible ? symbol.implicitWidth + spacing : 0)
                         anchors.centerIn: parent
-                        width: Math.min(naturalWidth, parent.width)
                         spacing: 6
 
                         MaterialSymbol {
-                            id: symbol
                             anchors.verticalCenter: parent.verticalCenter
                             visible: segment.modelData.symbol.length > 0
                             text: segment.modelData.symbol
@@ -222,16 +193,10 @@ Item {
                             }
                         }
                         StyledText {
-                            id: label
-                            objectName: "segmentLabel"
                             anchors.verticalCenter: parent.verticalCenter
-                            width: Math.max(0, content.width - (symbol.visible ? symbol.width + content.spacing : 0))
                             visible: segment.modelData.text.length > 0
                             text: segment.modelData.text
                             font.pixelSize: Appearance.fontSize.smallie
-                            fontSizeMode: Text.Fit
-                            minimumPixelSize: Math.min(10, font.pixelSize)
-                            elide: Text.ElideRight
                             font.weight: Font.Medium
                             color: segment.foreground
 

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +22,7 @@
 #include <QDir>
 #include <QStandardPaths>
 
-namespace swiftify::paths {
+namespace swifty::paths {
 
 namespace {
 
@@ -36,23 +37,13 @@ QString ensured(const QString &path)
 QString dataDirectory()
 {
     return ensured(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
-                   + QStringLiteral("/Swiftify"));
+                   + QStringLiteral("/Swifty"));
 }
 
 QString cacheDirectory()
 {
     return ensured(QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation)
-                   + QStringLiteral("/Swiftify"));
+                   + QStringLiteral("/Swifty"));
 }
 
-QString logDirectory()
-{
-    return ensured(dataDirectory() + QStringLiteral("/logs"));
-}
-
-QString logFilePath()
-{
-    return logDirectory() + QStringLiteral("/swiftify.log");
-}
-
-} // namespace swiftify::paths
+} // namespace swifty::paths

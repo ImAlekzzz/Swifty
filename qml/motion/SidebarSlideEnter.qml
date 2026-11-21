@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // end4's sidebarSlideEnter: side sheets and drawers opening.
 NumberAnimation {

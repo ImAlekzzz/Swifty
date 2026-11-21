@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // a material 3 search bar: a full pill with a leading magnifier and a clear
 // button once there is something to clear.
@@ -27,7 +28,7 @@ Rectangle {
 
     property alias text: input.text
     readonly property bool editing: input.activeFocus
-    property string placeholder: qsTr("Search")
+    property string placeholder: "Search"
     signal accepted()
 
     function focusField() {

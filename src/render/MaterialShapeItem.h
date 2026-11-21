@@ -23,7 +23,7 @@
 #include <QQuickItem>
 #include <QtQml/qqmlregistration.h>
 
-namespace swiftify {
+namespace swifty {
 
 class AmbientClock;
 
@@ -133,4 +133,4 @@ private:
     QMetaObject::Connection m_parentHeight;
 };
 
-} // namespace swiftify
+} // namespace swifty

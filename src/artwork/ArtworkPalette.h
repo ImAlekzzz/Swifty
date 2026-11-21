@@ -24,7 +24,7 @@
 
 #include <optional>
 
-namespace swiftify {
+namespace swifty {
 
 /// colours taken from a cover, and how much of the cover each stands for
 /// (fractions summing to 1; a colour derived to fill out the set stands for none).
@@ -45,4 +45,4 @@ std::optional<WeightedPalette> extract(const QImage &cover);
 std::optional<WeightedPalette> extract(const QByteArray &encoded);
 
 } // namespace palette
-} // namespace swiftify
+} // namespace swifty

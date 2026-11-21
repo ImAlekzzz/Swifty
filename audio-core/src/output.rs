@@ -203,7 +203,7 @@ impl LocalOutput {
         let filled = Arc::clone(&shared);
         let failed = Arc::clone(&shared.failed);
         thread::Builder::new()
-            .name("swiftify-local-output".to_owned())
+            .name("swifty-local-output".to_owned())
             .spawn(move || {
                 let Some((stream, rate)) = open_stereo_stream(move |out| filled.fill(out), failed) else {
                     let _ = opened.send(None);

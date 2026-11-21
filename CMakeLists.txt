@@ -1,6 +1,7 @@
 #[[
     Swiftify, a spotify player for desktop
     Copyright (C) 2026  shred0s
+    Copyright (C) 2026  ImAlekz (modified for Swifty)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,9 +19,9 @@
 
 cmake_minimum_required(VERSION 3.24)
 
-project(Swiftify
-    VERSION 0.25.2
-    DESCRIPTION "A native Spotify client"
+project(Swifty
+    VERSION 0.3.3
+    DESCRIPTION "A native local music player"
     LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -49,36 +50,29 @@ include(GNUInstallDirs)
 include(CTest)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(SWIFTIFY_IS_LINUX ON)
+    set(SWIFTY_IS_LINUX ON)
 else()
-    set(SWIFTIFY_IS_LINUX OFF)
+    set(SWIFTY_IS_LINUX OFF)
 endif()
 
 # the wayland, d-bus and pipewire pieces. off elsewhere so the portable parts
 # can be built and tested on a development machine without them.
-option(SWIFTIFY_DESKTOP_INTEGRATION "Build the Linux desktop integration" ${SWIFTIFY_IS_LINUX})
-# spotify soloist plays spotify's songs for accounts spotify no longer gives
-# librespot the keys for.
-option(SWIFTIFY_SOLOIST "Play Spotify songs through Spotify Soloist when it is installed" ON)
+option(SWIFTY_DESKTOP_INTEGRATION "Build the Linux desktop integration" ${SWIFTY_IS_LINUX})
 
 find_package(Qt6 6.10 REQUIRED COMPONENTS
-    Core Gui Network Concurrent Qml Quick QuickControls2 ShaderTools)
+    Core Gui Network Concurrent Sql Qml Quick QuickControls2 ShaderTools)
 if(BUILD_TESTING)
     find_package(Qt6 6.10 REQUIRED COMPONENTS Test QuickTest)
 endif()
-if(SWIFTIFY_IS_LINUX)
+if(SWIFTY_IS_LINUX)
     find_package(Qt6 6.10 REQUIRED COMPONENTS DBus Widgets)
 else()
     find_package(Qt6 6.10 OPTIONAL_COMPONENTS DBus)
 endif()
-if(SWIFTIFY_DESKTOP_INTEGRATION)
+if(SWIFTY_DESKTOP_INTEGRATION)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse)
 endif()
-if(SWIFTIFY_SOLOIST)
-    find_package(Qt6 6.10 REQUIRED COMPONENTS WebSockets)
-endif()
-find_package(Qt6Keychain REQUIRED)
 if(WIN32)
     find_package(Qt6 6.10 REQUIRED COMPONENTS Widgets)
 endif()
@@ -86,20 +80,18 @@ find_package(QCoro6 0.10 REQUIRED COMPONENTS Core Network)
 qcoro_enable_coroutines()
 
 qt_standard_project_setup(REQUIRES 6.10)
-# modules get their own folder so tooling finds them as <dir>/Swiftify/qmldir,
+# modules get their own folder so tooling finds them as <dir>/Swifty/qmldir,
 # clear of the executable (the same name on a case-insensitive disk).
 set(QT_QML_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/qml_modules)
 
-# --- spotify-core (Rust) -----------------------------------------------------
+# --- audio-core (Rust) -----------------------------------------------------
 
-# the core sits inside this folder in swiftify-linux, and beside it in the
-# swiftify repository with the apple apps
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/spotify-core/Cargo.toml)
-    set(SWIFTIFY_CORE_DEFAULT ${CMAKE_CURRENT_SOURCE_DIR}/spotify-core)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/audio-core/Cargo.toml)
+    set(SWIFTY_CORE_DEFAULT ${CMAKE_CURRENT_SOURCE_DIR}/audio-core)
 else()
-    set(SWIFTIFY_CORE_DEFAULT ${CMAKE_CURRENT_SOURCE_DIR}/../spotify-core)
+    set(SWIFTY_CORE_DEFAULT ${CMAKE_CURRENT_SOURCE_DIR}/../audio-core)
 endif()
-set(SWIFTIFY_CORE_DIR ${SWIFTIFY_CORE_DEFAULT} CACHE PATH "The Rust core, spotify-core")
+set(SWIFTY_CORE_DIR ${SWIFTY_CORE_DEFAULT} CACHE PATH "The Rust core, audio-core")
 
 include(FetchContent)
 FetchContent_Declare(Corrosion
@@ -108,31 +100,29 @@ FetchContent_Declare(Corrosion
 FetchContent_MakeAvailable(Corrosion)
 
 corrosion_import_crate(
-    MANIFEST_PATH ${SWIFTIFY_CORE_DIR}/Cargo.toml
+    MANIFEST_PATH ${SWIFTY_CORE_DIR}/Cargo.toml
     CRATE_TYPES staticlib
     NO_DEFAULT_FEATURES
     FEATURES capi)
-target_include_directories(spotify_core INTERFACE
-    ${SWIFTIFY_CORE_DIR}/include)
+target_include_directories(audio_core INTERFACE
+    ${SWIFTY_CORE_DIR}/include)
 # what rustc reports as the staticlib's native dependencies
 # (cargo rustc -- --print native-static-libs).
 if(APPLE)
-    target_link_libraries(spotify_core INTERFACE
+    target_link_libraries(audio_core INTERFACE
         "-framework AudioToolbox" "-framework CoreAudio" "-framework IOKit"
         "-framework CoreFoundation" "-framework Foundation" "-framework SystemConfiguration"
         "-framework Security" objc iconv)
 elseif(WIN32)
-    # windows: wasapi for audio, schannel for tls, and what rust's std
-    # needs; the linker leaves out any of them nothing uses
-    target_link_libraries(spotify_core INTERFACE
+    # windows: wasapi for audio, and what rust's std needs; the linker leaves out any of them nothing uses
+    target_link_libraries(audio_core INTERFACE
         ws2_32 userenv bcrypt ntdll advapi32 kernel32 user32 shell32 ole32 oleaut32
         propsys crypt32 secur32 ncrypt runtimeobject synchronization)
 else()
     find_package(ALSA REQUIRED)
-    find_package(OpenSSL REQUIRED)
     find_package(Threads REQUIRED)
-    target_link_libraries(spotify_core INTERFACE
-        ALSA::ALSA OpenSSL::SSL OpenSSL::Crypto Threads::Threads ${CMAKE_DL_LIBS} m)
+    target_link_libraries(audio_core INTERFACE
+        ALSA::ALSA Threads::Threads ${CMAKE_DL_LIBS} m)
 endif()
 
 # --- material-color-utilities ------------------------------------------------
@@ -146,26 +136,26 @@ set_target_properties(material_color_utilities PROPERTIES POSITION_INDEPENDENT_C
 
 # --- fonts ---------------------------------------------------------------------
 
-option(SWIFTIFY_DOWNLOAD_ICON_FONT
+option(SWIFTY_DOWNLOAD_ICON_FONT
     "Download Material Symbols Rounded to install beside the app" ON)
 include(cmake/DownloadAsset.cmake)
-set(SWIFTIFY_FONT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fonts)
-if(SWIFTIFY_DOWNLOAD_ICON_FONT)
-    set(SWIFTIFY_ICON_FONT ${SWIFTIFY_FONT_DIRECTORY}/MaterialSymbolsRounded.ttf)
-    swiftify_download_asset(
+set(SWIFTY_FONT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fonts)
+if(SWIFTY_DOWNLOAD_ICON_FONT)
+    set(SWIFTY_ICON_FONT ${SWIFTY_FONT_DIRECTORY}/MaterialSymbolsRounded.ttf)
+    swifty_download_asset(
         "https://raw.githubusercontent.com/google/material-design-icons/737e3324305806514d7909874fa1818ae1808232/variablefont/MaterialSymbolsRounded%5BFILL,GRAD,opsz,wght%5D.ttf"
-        "${SWIFTIFY_ICON_FONT}"
+        "${SWIFTY_ICON_FONT}"
         95b24392bb49efd1bc3e92cff4e2452ad094461bab7c97e7d8723fab97e330ca)
     if(NOT APPLE)
-        install(FILES ${SWIFTIFY_ICON_FONT} DESTINATION ${CMAKE_INSTALL_DATADIR}/swiftify/fonts)
+        install(FILES ${SWIFTY_ICON_FONT} DESTINATION ${CMAKE_INSTALL_DATADIR}/swifty/fonts)
     endif()
     # the font's list of names, from the same commit: the tests check every
     # symbol the qml asks for is in it, since a misspelt one shows as text
-    set(SWIFTIFY_ICON_CODEPOINTS ${SWIFTIFY_FONT_DIRECTORY}/MaterialSymbolsRounded.codepoints)
+    set(SWIFTY_ICON_CODEPOINTS ${SWIFTY_FONT_DIRECTORY}/MaterialSymbolsRounded.codepoints)
     if(BUILD_TESTING)
-        swiftify_download_asset(
+        swifty_download_asset(
             "https://raw.githubusercontent.com/google/material-design-icons/737e3324305806514d7909874fa1818ae1808232/variablefont/MaterialSymbolsRounded%5BFILL,GRAD,opsz,wght%5D.codepoints"
-            "${SWIFTIFY_ICON_CODEPOINTS}"
+            "${SWIFTY_ICON_CODEPOINTS}"
             225bd09137103cb7746bc93dc08d08764c9f0c3bd04f4b958d4a3c3c19432dd6)
     endif()
 endif()
@@ -173,312 +163,269 @@ endif()
 # google sans flex, end4's face: the interface text, and the titles in it
 # drawn round, wide and heavy through its variable axes. its licence travels
 # with it.
-option(SWIFTIFY_DOWNLOAD_INTERFACE_FONT
+option(SWIFTY_DOWNLOAD_INTERFACE_FONT
     "Download Google Sans Flex to install beside the app" ON)
-if(SWIFTIFY_DOWNLOAD_INTERFACE_FONT)
-    set(SWIFTIFY_INTERFACE_FONT ${SWIFTIFY_FONT_DIRECTORY}/GoogleSansFlex.ttf)
-    set(SWIFTIFY_INTERFACE_FONT_LICENSE ${SWIFTIFY_FONT_DIRECTORY}/GoogleSansFlex-OFL.txt)
-    set(SWIFTIFY_GOOGLE_FONTS https://raw.githubusercontent.com/google/fonts/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/googlesansflex)
-    swiftify_download_asset(
-        "${SWIFTIFY_GOOGLE_FONTS}/GoogleSansFlex%5BGRAD,ROND,opsz,slnt,wdth,wght%5D.ttf"
-        "${SWIFTIFY_INTERFACE_FONT}"
+if(SWIFTY_DOWNLOAD_INTERFACE_FONT)
+    set(SWIFTY_INTERFACE_FONT ${SWIFTY_FONT_DIRECTORY}/GoogleSansFlex.ttf)
+    set(SWIFTY_INTERFACE_FONT_LICENSE ${SWIFTY_FONT_DIRECTORY}/GoogleSansFlex-OFL.txt)
+    set(SWIFTY_GOOGLE_FONTS https://raw.githubusercontent.com/google/fonts/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/googlesansflex)
+    swifty_download_asset(
+        "${SWIFTY_GOOGLE_FONTS}/GoogleSansFlex%5BGRAD,ROND,opsz,slnt,wdth,wght%5D.ttf"
+        "${SWIFTY_INTERFACE_FONT}"
         c31a482fbecbf2e07e6890134d20078723aadf732c9b9c6c9a44f86f8265b6fe)
-    swiftify_download_asset("${SWIFTIFY_GOOGLE_FONTS}/OFL.txt"
-        "${SWIFTIFY_INTERFACE_FONT_LICENSE}"
+    swifty_download_asset("${SWIFTY_GOOGLE_FONTS}/OFL.txt"
+        "${SWIFTY_INTERFACE_FONT_LICENSE}"
         fc13d69f63e36d284b6e383d4d1463d8ad404f0aa065e57cf961252d51063137)
     if(NOT APPLE)
-        install(FILES ${SWIFTIFY_INTERFACE_FONT} ${SWIFTIFY_INTERFACE_FONT_LICENSE}
-            DESTINATION ${CMAKE_INSTALL_DATADIR}/swiftify/fonts)
+        install(FILES ${SWIFTY_INTERFACE_FONT} ${SWIFTY_INTERFACE_FONT_LICENSE}
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/swifty/fonts)
     endif()
 endif()
 
 # --- licences ------------------------------------------------------------------
 
-# the code built into swiftify or bundled with it, whose licences go out with
+# the code built into swifty or bundled with it, whose licences go out with
 # every copy beside its own. they're copied under their installed names first,
 # as the app bundle can't rename what it carries
-set(SWIFTIFY_LICENSE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/licenses)
+set(SWIFTY_LICENSE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/licenses)
 configure_file(third_party/material-color-utilities/LICENSE
-    ${SWIFTIFY_LICENSE_DIRECTORY}/material-color-utilities.LICENSE COPYONLY)
+    ${SWIFTY_LICENSE_DIRECTORY}/material-color-utilities.LICENSE COPYONLY)
 configure_file(third_party/rounded-polygon-qmljs/LICENSE
-    ${SWIFTIFY_LICENSE_DIRECTORY}/rounded-polygon-qmljs.LICENSE COPYONLY)
-set(SWIFTIFY_THIRD_PARTY_LICENSES
-    ${SWIFTIFY_LICENSE_DIRECTORY}/material-color-utilities.LICENSE
-    ${SWIFTIFY_LICENSE_DIRECTORY}/rounded-polygon-qmljs.LICENSE
-    # the rust crates', made with cargo about (spotify-core/about.toml)
+    ${SWIFTY_LICENSE_DIRECTORY}/rounded-polygon-qmljs.LICENSE COPYONLY)
+set(SWIFTY_THIRD_PARTY_LICENSES
+    ${SWIFTY_LICENSE_DIRECTORY}/material-color-utilities.LICENSE
+    ${SWIFTY_LICENSE_DIRECTORY}/rounded-polygon-qmljs.LICENSE
+    # the rust crates of audio-core, symphonia's MPL-2.0 among them
     ${CMAKE_CURRENT_SOURCE_DIR}/packaging/licenses/rust-crates.LICENSE)
 # material symbols, the icon font downloaded above
-if(SWIFTIFY_DOWNLOAD_ICON_FONT)
-    list(APPEND SWIFTIFY_THIRD_PARTY_LICENSES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/licenses/material-symbols.LICENSE)
+if(SWIFTY_DOWNLOAD_ICON_FONT)
+    list(APPEND SWIFTY_THIRD_PARTY_LICENSES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/licenses/material-symbols.LICENSE)
 endif()
-# the prebuilt downloads bundle qt, qtkeychain and qcoro, and their licences go
-# with them. a distro's package uses the system's and leaves them off
-option(SWIFTIFY_BUNDLED_QT "Install the licences of Qt, QtKeychain and QCoro, for a build that bundles them" OFF)
-if(SWIFTIFY_BUNDLED_QT)
-    configure_file(packaging/licenses/qt.NOTICE.in ${SWIFTIFY_LICENSE_DIRECTORY}/qt.NOTICE @ONLY)
-    list(APPEND SWIFTIFY_THIRD_PARTY_LICENSES
+# the prebuilt downloads bundle qt and qcoro, and their licences go with them.
+# a distro's package uses the system's and leaves them off
+option(SWIFTY_BUNDLED_QT "Install the licences of Qt and QCoro, for a build that bundles them" OFF)
+if(SWIFTY_BUNDLED_QT)
+    configure_file(packaging/licenses/qt.NOTICE.in ${SWIFTY_LICENSE_DIRECTORY}/qt.NOTICE @ONLY)
+    list(APPEND SWIFTY_THIRD_PARTY_LICENSES
         ${CMAKE_CURRENT_SOURCE_DIR}/packaging/licenses/qt.LICENSE
-        ${SWIFTIFY_LICENSE_DIRECTORY}/qt.NOTICE
-        ${CMAKE_CURRENT_SOURCE_DIR}/packaging/licenses/qtkeychain.LICENSE
+        ${SWIFTY_LICENSE_DIRECTORY}/qt.NOTICE
         ${CMAKE_CURRENT_SOURCE_DIR}/packaging/licenses/qcoro.LICENSE)
 endif()
 
 # --- the app ---------------------------------------------------------------------
 
-file(GLOB_RECURSE SWIFTIFY_SOURCES CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+file(GLOB_RECURSE SWIFTY_SOURCES CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     src/*.cpp src/*.h src/*.mm)
-list(REMOVE_ITEM SWIFTIFY_SOURCES src/main.cpp)
+list(REMOVE_ITEM SWIFTY_SOURCES src/main.cpp)
 if(NOT APPLE)
-    list(FILTER SWIFTIFY_SOURCES EXCLUDE REGEX "^src/system/macos/")
+    list(FILTER SWIFTY_SOURCES EXCLUDE REGEX "^src/system/macos/")
 endif()
 if(NOT WIN32)
-    list(FILTER SWIFTIFY_SOURCES EXCLUDE REGEX "^src/system/windows/")
+    list(FILTER SWIFTY_SOURCES EXCLUDE REGEX "^src/system/windows/")
 endif()
-if(NOT SWIFTIFY_DESKTOP_INTEGRATION)
-    list(FILTER SWIFTIFY_SOURCES EXCLUDE REGEX "^src/system/linux/")
+# the media controls of windows use c++/winrt, from the windows sdk that comes
+# with visual studio. mingw's headers do not have it, and build without. they
+# can also be turned off, with -DSWIFTY_WINDOWS_MEDIA_CONTROLS=OFF
+option(SWIFTY_WINDOWS_MEDIA_CONTROLS "Windows volume flyout, lock screen and media keys (MSVC only)" ON)
+if(NOT (MSVC AND SWIFTY_WINDOWS_MEDIA_CONTROLS))
+    list(FILTER SWIFTY_SOURCES EXCLUDE REGEX "^src/system/windows/MediaTransport")
+    if(WIN32)
+        message(STATUS "building without the Windows media controls")
+    endif()
+endif()
+if(NOT SWIFTY_DESKTOP_INTEGRATION)
+    list(FILTER SWIFTY_SOURCES EXCLUDE REGEX "^src/system/linux/")
 endif()
 if(NOT TARGET Qt6::DBus)
-    list(FILTER SWIFTIFY_SOURCES EXCLUDE REGEX "^src/system/dbus/")
-endif()
-if(NOT SWIFTIFY_SOLOIST)
-    list(FILTER SWIFTIFY_SOURCES EXCLUDE REGEX "^src/soloist/")
-else()
-    if(NOT SWIFTIFY_DESKTOP_INTEGRATION)
-        # routing soloist through swiftify records it with libpulse
-        list(FILTER SWIFTIFY_SOURCES EXCLUDE REGEX "^src/soloist/SoloistAudioRoute")
-    endif()
-    if(NOT WIN32)
-        # the visualizers hear soloist through a windows process loopback
-        list(FILTER SWIFTIFY_SOURCES EXCLUDE REGEX "^src/soloist/SoloistLoopback")
-    endif()
+    list(FILTER SWIFTY_SOURCES EXCLUDE REGEX "^src/system/dbus/")
 endif()
 
-file(GLOB_RECURSE SWIFTIFY_QML CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+file(GLOB_RECURSE SWIFTY_QML CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     qml/*.qml)
-file(GLOB SWIFTIFY_SINGLETONS CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+file(GLOB SWIFTY_SINGLETONS CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     qml/design/*.qml)
-set_source_files_properties(${SWIFTIFY_SINGLETONS} PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(${SWIFTY_SINGLETONS} PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
-file(GLOB SWIFTIFY_SHADERS CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+file(GLOB SWIFTY_SHADERS CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     shaders/*.frag shaders/*.vert)
 
-qt_add_library(swiftify_app STATIC)
-qt_add_resources(swiftify_app "swiftify_translations"
-    PREFIX "/translations"
-    BASE translations
-    FILES translations/ru.json translations/de.json)
-qt_add_qml_module(swiftify_app
-    URI Swiftify
+qt_add_library(swifty_app STATIC)
+qt_add_qml_module(swifty_app
+    URI Swifty
     VERSION 1.0
-    SOURCES ${SWIFTIFY_SOURCES}
-    QML_FILES ${SWIFTIFY_QML}
-    RESOURCES resources/swiftify-icon.png resources/cameo.png
+    SOURCES ${SWIFTY_SOURCES}
+    QML_FILES ${SWIFTY_QML}
+    RESOURCES resources/swifty-icon.png resources/cameo.png
     DEPENDENCIES QtQuick)
 # BATCHABLE: the spectrum's material can be merged into the scene graph's
 # batches, which needs the extra vertex input qsb adds for it.
-qt_add_shaders(swiftify_app "swiftify_shaders"
+qt_add_shaders(swifty_app "swifty_shaders"
     BATCHABLE
     PREFIX "/shaders"
     BASE shaders
-    FILES ${SWIFTIFY_SHADERS})
+    FILES ${SWIFTY_SHADERS})
 
 # material 3's shapes as distance fields, for MaterialShape: drawn at build
 # time from the vendored rounded-polygon-qmljs (tools/shape_atlas)
 # the tool runs during the build, so a cross build (windows from a mac, say)
 # takes one built for the machine doing the building
-set(SWIFTIFY_SHAPE_ATLAS_TOOL "" CACHE FILEPATH
+set(SWIFTY_SHAPE_ATLAS_TOOL "" CACHE FILEPATH
     "a shape_atlas built for the build machine, for cross builds")
-if(SWIFTIFY_SHAPE_ATLAS_TOOL)
-    set(SWIFTIFY_SHAPE_ATLAS_COMMAND ${SWIFTIFY_SHAPE_ATLAS_TOOL})
+if(SWIFTY_SHAPE_ATLAS_TOOL)
+    set(SWIFTY_SHAPE_ATLAS_COMMAND ${SWIFTY_SHAPE_ATLAS_TOOL})
 elseif(CMAKE_CROSSCOMPILING)
-    message(FATAL_ERROR "a cross build needs -DSWIFTIFY_SHAPE_ATLAS_TOOL=<shape_atlas built for this machine>")
+    message(FATAL_ERROR "a cross build needs -DSWIFTY_SHAPE_ATLAS_TOOL=<shape_atlas built for this machine>")
 else()
     add_executable(shape_atlas tools/shape_atlas/main.cpp tools/shape_atlas/ShapeAtlasLayout.h)
     target_include_directories(shape_atlas PRIVATE tools/shape_atlas)
     target_link_libraries(shape_atlas PRIVATE Qt6::Core Qt6::Gui Qt6::Qml)
     # it runs on every fresh build, so it is optimised even in a debug one
     target_compile_options(shape_atlas PRIVATE $<$<CXX_COMPILER_ID:Clang,AppleClang,GNU>:-O2>)
-    set(SWIFTIFY_SHAPE_ATLAS_COMMAND shape_atlas)
+    set(SWIFTY_SHAPE_ATLAS_COMMAND shape_atlas)
 endif()
-set(SWIFTIFY_SHAPE_LIBRARY ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rounded-polygon-qmljs)
-file(GLOB_RECURSE SWIFTIFY_SHAPE_SOURCES CONFIGURE_DEPENDS ${SWIFTIFY_SHAPE_LIBRARY}/*.js)
-set(SWIFTIFY_SHAPE_ATLAS ${CMAKE_CURRENT_BINARY_DIR}/shapes/shape_atlas.png)
-add_custom_command(OUTPUT ${SWIFTIFY_SHAPE_ATLAS}
+set(SWIFTY_SHAPE_LIBRARY ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rounded-polygon-qmljs)
+file(GLOB_RECURSE SWIFTY_SHAPE_SOURCES CONFIGURE_DEPENDS ${SWIFTY_SHAPE_LIBRARY}/*.js)
+set(SWIFTY_SHAPE_ATLAS ${CMAKE_CURRENT_BINARY_DIR}/shapes/shape_atlas.png)
+add_custom_command(OUTPUT ${SWIFTY_SHAPE_ATLAS}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/shapes
-    COMMAND ${SWIFTIFY_SHAPE_ATLAS_COMMAND} ${SWIFTIFY_SHAPE_LIBRARY} ${SWIFTIFY_SHAPE_ATLAS}
-    DEPENDS ${SWIFTIFY_SHAPE_ATLAS_COMMAND} ${SWIFTIFY_SHAPE_SOURCES}
-    COMMENT "Drawing the shape atlas")
-qt_add_resources(swiftify_app "swiftify_shape_atlas"
+    COMMAND ${SWIFTY_SHAPE_ATLAS_COMMAND} ${SWIFTY_SHAPE_LIBRARY} ${SWIFTY_SHAPE_ATLAS}
+    DEPENDS ${SWIFTY_SHAPE_ATLAS_COMMAND} ${SWIFTY_SHAPE_SOURCES}
+    COMMENT "Drawing the shape atlas"
+    VERBATIM)
+qt_add_resources(swifty_app "swifty_shape_atlas"
     PREFIX "/shapes"
     BASE ${CMAKE_CURRENT_BINARY_DIR}/shapes
-    FILES ${SWIFTIFY_SHAPE_ATLAS})
+    FILES ${SWIFTY_SHAPE_ATLAS})
 
-target_include_directories(swiftify_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(swifty_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # qmltyperegistrar includes registered headers by file name alone, so every
 # folder holding one is searched too. header names stay unique across src/.
-set(SWIFTIFY_SOURCE_DIRECTORIES)
-foreach(source IN LISTS SWIFTIFY_SOURCES)
+set(SWIFTY_SOURCE_DIRECTORIES)
+foreach(source IN LISTS SWIFTY_SOURCES)
     get_filename_component(directory ${CMAKE_CURRENT_SOURCE_DIR}/${source} DIRECTORY)
-    list(APPEND SWIFTIFY_SOURCE_DIRECTORIES ${directory})
+    list(APPEND SWIFTY_SOURCE_DIRECTORIES ${directory})
 endforeach()
-list(REMOVE_DUPLICATES SWIFTIFY_SOURCE_DIRECTORIES)
-target_include_directories(swiftify_app PRIVATE ${SWIFTIFY_SOURCE_DIRECTORIES})
+list(REMOVE_DUPLICATES SWIFTY_SOURCE_DIRECTORIES)
+target_include_directories(swifty_app PRIVATE ${SWIFTY_SOURCE_DIRECTORIES})
 # MaterialShapeItem finds a shape's cell the way the atlas tool lays them out
-target_include_directories(swiftify_app PRIVATE tools/shape_atlas)
-# public so main.cpp, built in the swiftify target, starts mpris and the
-# sleep and device monitors
-target_compile_definitions(swiftify_app PUBLIC
-    SWIFTIFY_VERSION="${PROJECT_VERSION}"
-    $<$<BOOL:${SWIFTIFY_DESKTOP_INTEGRATION}>:SWIFTIFY_DESKTOP_INTEGRATION>
-    $<$<TARGET_EXISTS:Qt6::DBus>:SWIFTIFY_HAS_DBUS>)
-target_compile_definitions(swiftify_app PRIVATE
-    SWIFTIFY_BUILD_FONT_DIRECTORY="${SWIFTIFY_FONT_DIRECTORY}")
-# main.cpp picks the core, and is built outside swiftify_app
-target_compile_definitions(swiftify_app PUBLIC $<$<BOOL:${SWIFTIFY_SOLOIST}>:SWIFTIFY_HAS_SOLOIST>)
+target_include_directories(swifty_app PRIVATE tools/shape_atlas)
+target_compile_definitions(swifty_app PUBLIC SWIFTY_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(swifty_app PRIVATE
+    SWIFTY_BUILD_FONT_DIRECTORY="${SWIFTY_FONT_DIRECTORY}"
+    $<$<BOOL:${SWIFTY_DESKTOP_INTEGRATION}>:SWIFTY_DESKTOP_INTEGRATION>
+    $<$<TARGET_EXISTS:Qt6::DBus>:SWIFTY_HAS_DBUS>)
 if(TARGET Qt6::DBus)
-    target_link_libraries(swiftify_app PUBLIC Qt6::DBus)
+    target_link_libraries(swifty_app PUBLIC Qt6::DBus)
 endif()
-if(SWIFTIFY_SOLOIST)
-    target_link_libraries(swiftify_app PUBLIC Qt6::WebSockets)
-endif()
-if(SWIFTIFY_DESKTOP_INTEGRATION)
-    target_link_libraries(swiftify_app PUBLIC PkgConfig::PULSE)
+if(SWIFTY_DESKTOP_INTEGRATION)
+    target_link_libraries(swifty_app PUBLIC PkgConfig::PULSE)
 endif()
 if(APPLE)
-    target_link_libraries(swiftify_app PUBLIC "-framework AppKit" "-framework MediaPlayer" "-framework QuartzCore")
+    target_link_libraries(swifty_app PUBLIC "-framework AppKit" "-framework MediaPlayer" "-framework QuartzCore")
     # now playing holds its objective-c objects with arc
     set_source_files_properties(src/system/macos/NowPlaying.mm src/system/macos/MacWindow.mm
         PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 endif()
-target_link_libraries(swiftify_app PUBLIC
-    Qt6::Core Qt6::Gui Qt6::Network Qt6::Concurrent Qt6::Qml Qt6::Quick Qt6::QuickControls2
+target_link_libraries(swifty_app PUBLIC
+    Qt6::Core Qt6::Gui Qt6::Network Qt6::Concurrent Qt6::Sql Qt6::Qml Qt6::Quick Qt6::QuickControls2
     QCoro6::Core QCoro6::Network
-    qt6keychain
     material_color_utilities
-    spotify_core)
+    audio_core)
 
 if(WIN32)
-    target_link_libraries(swiftify_app PUBLIC Qt6::Widgets comctl32 dwmapi ole32 shell32 uuid runtimeobject mmdevapi)
-
-    # older mingw-w64 headers (qt's bundled mingw 13.1, say) have no
-    # SystemMediaTransportControls in windows.media.h; the media controls are
-    # left out there, and the taskbar and window styling still build
-    include(CheckCXXSourceCompiles)
-    set(CMAKE_REQUIRED_LIBRARIES runtimeobject)
-    check_cxx_source_compiles([=[
-        #ifdef __MINGW32__
-        #define ____FIReference_1_boolean_INTERFACE_DEFINED__
-        #endif
-        #include <windows.h>
-        #include <roapi.h>
-        #include <windows.media.h>
-        #include <systemmediatransportcontrolsinterop.h>
-        using Handler = ABI::Windows::Foundation::ITypedEventHandler<
-            ABI::Windows::Media::SystemMediaTransportControls *,
-            ABI::Windows::Media::SystemMediaTransportControlsButtonPressedEventArgs *>;
-        int main()
-        {
-            ABI::Windows::Media::ISystemMediaTransportControls *controls = nullptr;
-            ABI::Windows::Media::IMusicDisplayProperties2 *music = nullptr;
-            ISystemMediaTransportControlsInterop *interop = nullptr;
-            Handler *handler = nullptr;
-            return __uuidof(Handler).Data1 != 0 && !controls && !music && !interop && !handler ? 0 : 1;
-        }
-    ]=] SWIFTIFY_HAVE_SMTC)
-    unset(CMAKE_REQUIRED_LIBRARIES)
-    if(SWIFTIFY_HAVE_SMTC)
-        target_compile_definitions(swiftify_app PRIVATE SWIFTIFY_HAVE_SMTC)
-    else()
-        message(WARNING "This toolchain's windows.media.h has no SystemMediaTransportControls, so Swiftify is "
-            "building without the Windows media controls (media overlay, lock screen, media keys). "
-            "Build with MSVC, or a newer mingw-w64, for them; see the Windows section of README.md.")
-    endif()
+    target_link_libraries(swifty_app PUBLIC Qt6::Widgets comctl32 dwmapi ole32 shell32 uuid)
+endif()
+if(MSVC AND SWIFTY_WINDOWS_MEDIA_CONTROLS)
+    # the volume flyout, lock screen and media keys (MediaTransport)
+    target_compile_definitions(swifty_app PRIVATE SWIFTY_HAS_SMTC)
+    target_link_libraries(swifty_app PRIVATE WindowsApp)
 endif()
 
-qt_add_executable(swiftify src/main.cpp)
-target_link_libraries(swiftify PRIVATE swiftify_app swiftify_appplugin)
-if(SWIFTIFY_IS_LINUX)
-    target_link_libraries(swiftify PRIVATE Qt6::Widgets)
+qt_add_executable(swifty src/main.cpp)
+# main.cpp builds the media controls (MPRIS), the sleep monitor and the audio
+# device monitor under these, and is not part of swifty_app, whose private
+# definitions it would otherwise never see: without them none of the three
+# was ever made on Linux, and no shell could see what was playing
+target_compile_definitions(swifty PRIVATE
+    $<$<BOOL:${SWIFTY_DESKTOP_INTEGRATION}>:SWIFTY_DESKTOP_INTEGRATION>
+    $<$<TARGET_EXISTS:Qt6::DBus>:SWIFTY_HAS_DBUS>)
+target_link_libraries(swifty PRIVATE swifty_app swifty_appplugin)
+if(SWIFTY_IS_LINUX)
+    target_link_libraries(swifty PRIVATE Qt6::Widgets)
 endif()
-# a windowed app on windows, with no console window of its own, and the icon
-# in its resources so explorer and a pinned taskbar button show it
-set_target_properties(swiftify PROPERTIES WIN32_EXECUTABLE ON)
-if(WIN32)
-    set_source_files_properties(packaging/icons/swiftify.rc
-        PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/swiftify.ico)
-    target_sources(swiftify PRIVATE packaging/icons/swiftify.rc)
-endif()
+# a windowed app on windows, with no console window of its own
+set_target_properties(swifty PROPERTIES WIN32_EXECUTABLE ON)
 if(MINGW)
     # qt's WinMain shim reads msvcrt's __argc, which a mingw on ucrt (as
     # homebrew's is) lacks; mingw's own start-up calls main() just as well
-    set_target_properties(swiftify PROPERTIES qt_no_entrypoint ON)
+    set_target_properties(swifty PROPERTIES qt_no_entrypoint ON)
 endif()
 
 # on macos, an app bundle: its own name in the menu bar and the dock, its own
-# icon, and an identifier apart from the swift app's (com.addenator.Swiftify)
+# icon, and an identifier apart from the swift app's (com.addenator.Swifty)
 if(APPLE)
-    set(SWIFTIFY_ICON_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons)
+    set(SWIFTY_ICON_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons)
     # the swift app's icon composer icon, compiled as xcode compiles it: an
     # asset catalog that macos 26 draws with its glass and its dark and tinted
     # looks, and an .icns for older systems. without xcode's actool, an .icns
     # made from the rendered pngs instead.
     execute_process(COMMAND xcrun --find actool
-        OUTPUT_VARIABLE SWIFTIFY_ACTOOL OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    if(SWIFTIFY_ACTOOL)
-        set(SWIFTIFY_ICON_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/icon)
-        file(GLOB SWIFTIFY_ICON_PARTS LIST_DIRECTORIES false CONFIGURE_DEPENDS ${SWIFTIFY_ICON_SOURCE}/swiftify.icon/*
-            ${SWIFTIFY_ICON_SOURCE}/swiftify.icon/Assets/*)
-        add_custom_command(OUTPUT ${SWIFTIFY_ICON_OUTPUT}/Assets.car ${SWIFTIFY_ICON_OUTPUT}/swiftify.icns
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${SWIFTIFY_ICON_OUTPUT}
-            COMMAND ${SWIFTIFY_ACTOOL} --compile ${SWIFTIFY_ICON_OUTPUT} --platform macosx
-                --minimum-deployment-target 13.0 --app-icon swiftify
-                --output-partial-info-plist ${SWIFTIFY_ICON_OUTPUT}/icon.plist
-                ${SWIFTIFY_ICON_SOURCE}/swiftify.icon > /dev/null
-            DEPENDS ${SWIFTIFY_ICON_PARTS}
+        OUTPUT_VARIABLE SWIFTY_ACTOOL OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(SWIFTY_ACTOOL)
+        set(SWIFTY_ICON_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/icon)
+        file(GLOB SWIFTY_ICON_PARTS LIST_DIRECTORIES false CONFIGURE_DEPENDS ${SWIFTY_ICON_SOURCE}/swifty.icon/*
+            ${SWIFTY_ICON_SOURCE}/swifty.icon/Assets/*)
+        add_custom_command(OUTPUT ${SWIFTY_ICON_OUTPUT}/Assets.car ${SWIFTY_ICON_OUTPUT}/swifty.icns
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${SWIFTY_ICON_OUTPUT}
+            COMMAND ${SWIFTY_ACTOOL} --compile ${SWIFTY_ICON_OUTPUT} --platform macosx
+                --minimum-deployment-target 13.0 --app-icon swifty
+                --output-partial-info-plist ${SWIFTY_ICON_OUTPUT}/icon.plist
+                ${SWIFTY_ICON_SOURCE}/swifty.icon > /dev/null
+            DEPENDS ${SWIFTY_ICON_PARTS}
             COMMENT "Compiling the app icon")
-        set(SWIFTIFY_ICON_FILES ${SWIFTIFY_ICON_OUTPUT}/Assets.car ${SWIFTIFY_ICON_OUTPUT}/swiftify.icns)
+        set(SWIFTY_ICON_FILES ${SWIFTY_ICON_OUTPUT}/Assets.car ${SWIFTY_ICON_OUTPUT}/swifty.icns)
     else()
-        set(SWIFTIFY_ICONSET ${CMAKE_CURRENT_BINARY_DIR}/swiftify.iconset)
-        set(SWIFTIFY_ICNS ${CMAKE_CURRENT_BINARY_DIR}/swiftify.icns)
-        add_custom_command(OUTPUT ${SWIFTIFY_ICNS}
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${SWIFTIFY_ICONSET}
-            COMMAND sips -z 16 16 ${SWIFTIFY_ICON_SOURCE}/swiftify-32.png --out ${SWIFTIFY_ICONSET}/icon_16x16.png > /dev/null
-            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTIFY_ICON_SOURCE}/swiftify-32.png ${SWIFTIFY_ICONSET}/icon_16x16@2x.png
-            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTIFY_ICON_SOURCE}/swiftify-32.png ${SWIFTIFY_ICONSET}/icon_32x32.png
-            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTIFY_ICON_SOURCE}/swiftify-64.png ${SWIFTIFY_ICONSET}/icon_32x32@2x.png
-            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTIFY_ICON_SOURCE}/swiftify-128.png ${SWIFTIFY_ICONSET}/icon_128x128.png
-            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTIFY_ICON_SOURCE}/swiftify-256.png ${SWIFTIFY_ICONSET}/icon_128x128@2x.png
-            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTIFY_ICON_SOURCE}/swiftify-256.png ${SWIFTIFY_ICONSET}/icon_256x256.png
-            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTIFY_ICON_SOURCE}/swiftify-512.png ${SWIFTIFY_ICONSET}/icon_256x256@2x.png
-            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTIFY_ICON_SOURCE}/swiftify-512.png ${SWIFTIFY_ICONSET}/icon_512x512.png
-            COMMAND iconutil --convert icns --output ${SWIFTIFY_ICNS} ${SWIFTIFY_ICONSET}
-            DEPENDS ${SWIFTIFY_ICON_SOURCE}/swiftify-32.png ${SWIFTIFY_ICON_SOURCE}/swiftify-64.png
-                ${SWIFTIFY_ICON_SOURCE}/swiftify-128.png ${SWIFTIFY_ICON_SOURCE}/swiftify-256.png
-                ${SWIFTIFY_ICON_SOURCE}/swiftify-512.png
+        set(SWIFTY_ICONSET ${CMAKE_CURRENT_BINARY_DIR}/swifty.iconset)
+        set(SWIFTY_ICNS ${CMAKE_CURRENT_BINARY_DIR}/swifty.icns)
+        add_custom_command(OUTPUT ${SWIFTY_ICNS}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${SWIFTY_ICONSET}
+            COMMAND sips -z 16 16 ${SWIFTY_ICON_SOURCE}/swifty-32.png --out ${SWIFTY_ICONSET}/icon_16x16.png > /dev/null
+            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTY_ICON_SOURCE}/swifty-32.png ${SWIFTY_ICONSET}/icon_16x16@2x.png
+            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTY_ICON_SOURCE}/swifty-32.png ${SWIFTY_ICONSET}/icon_32x32.png
+            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTY_ICON_SOURCE}/swifty-64.png ${SWIFTY_ICONSET}/icon_32x32@2x.png
+            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTY_ICON_SOURCE}/swifty-128.png ${SWIFTY_ICONSET}/icon_128x128.png
+            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTY_ICON_SOURCE}/swifty-256.png ${SWIFTY_ICONSET}/icon_128x128@2x.png
+            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTY_ICON_SOURCE}/swifty-256.png ${SWIFTY_ICONSET}/icon_256x256.png
+            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTY_ICON_SOURCE}/swifty-512.png ${SWIFTY_ICONSET}/icon_256x256@2x.png
+            COMMAND ${CMAKE_COMMAND} -E copy ${SWIFTY_ICON_SOURCE}/swifty-512.png ${SWIFTY_ICONSET}/icon_512x512.png
+            COMMAND iconutil --convert icns --output ${SWIFTY_ICNS} ${SWIFTY_ICONSET}
+            DEPENDS ${SWIFTY_ICON_SOURCE}/swifty-32.png ${SWIFTY_ICON_SOURCE}/swifty-64.png
+                ${SWIFTY_ICON_SOURCE}/swifty-128.png ${SWIFTY_ICON_SOURCE}/swifty-256.png
+                ${SWIFTY_ICON_SOURCE}/swifty-512.png
             COMMENT "Making the app icon")
-        set(SWIFTIFY_ICON_FILES ${SWIFTIFY_ICNS})
+        set(SWIFTY_ICON_FILES ${SWIFTY_ICNS})
     endif()
-    set_source_files_properties(${SWIFTIFY_ICON_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    target_sources(swiftify PRIVATE ${SWIFTIFY_ICON_FILES})
-    if(SWIFTIFY_ICON_FONT)
-        set_source_files_properties(${SWIFTIFY_ICON_FONT} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/fonts)
-        target_sources(swiftify PRIVATE ${SWIFTIFY_ICON_FONT})
+    set_source_files_properties(${SWIFTY_ICON_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(swifty PRIVATE ${SWIFTY_ICON_FILES})
+    if(SWIFTY_ICON_FONT)
+        set_source_files_properties(${SWIFTY_ICON_FONT} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/fonts)
+        target_sources(swifty PRIVATE ${SWIFTY_ICON_FONT})
     endif()
-    if(SWIFTIFY_INTERFACE_FONT)
-        set_source_files_properties(${SWIFTIFY_INTERFACE_FONT} ${SWIFTIFY_INTERFACE_FONT_LICENSE}
+    if(SWIFTY_INTERFACE_FONT)
+        set_source_files_properties(${SWIFTY_INTERFACE_FONT} ${SWIFTY_INTERFACE_FONT_LICENSE}
             PROPERTIES MACOSX_PACKAGE_LOCATION Resources/fonts)
-        target_sources(swiftify PRIVATE ${SWIFTIFY_INTERFACE_FONT} ${SWIFTIFY_INTERFACE_FONT_LICENSE})
+        target_sources(swifty PRIVATE ${SWIFTY_INTERFACE_FONT} ${SWIFTY_INTERFACE_FONT_LICENSE})
     endif()
-    set_source_files_properties(LICENSE PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    target_sources(swiftify PRIVATE LICENSE)
-    set_source_files_properties(${SWIFTIFY_THIRD_PARTY_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    target_sources(swiftify PRIVATE ${SWIFTIFY_THIRD_PARTY_LICENSES})
-    set_target_properties(swiftify PROPERTIES
+    set_source_files_properties(LICENSE THIRD_PARTY_LICENSES.md PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(swifty PRIVATE LICENSE THIRD_PARTY_LICENSES.md)
+    set_source_files_properties(${SWIFTY_THIRD_PARTY_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(swifty PRIVATE ${SWIFTY_THIRD_PARTY_LICENSES})
+    set_target_properties(swifty PROPERTIES
         MACOSX_BUNDLE ON
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in
-        MACOSX_BUNDLE_BUNDLE_NAME Swiftify
-        MACOSX_BUNDLE_GUI_IDENTIFIER dev.addenator.Swiftify.Qt
-        MACOSX_BUNDLE_ICON_FILE swiftify.icns
+        MACOSX_BUNDLE_BUNDLE_NAME Swifty
+        MACOSX_BUNDLE_GUI_IDENTIFIER dev.imalekzzz.Swifty
+        MACOSX_BUNDLE_ICON_FILE swifty.icns
         MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
     # the linker signs only the executable; signing the bundle seals the icon
@@ -488,10 +435,10 @@ if(APPLE)
     # ad hoc by default. an identity of one's own keeps the signature's
     # requirement the same from build to build, so the keychain hands over
     # the stored logins without asking again after each one
-    set(SWIFTIFY_CODESIGN_IDENTITY "-" CACHE STRING "codesign identity for the app bundle; - signs ad hoc")
-    add_custom_command(TARGET swiftify POST_BUILD
-        COMMAND xattr -cr $<TARGET_BUNDLE_DIR:swiftify>
-        COMMAND codesign --force --sign ${SWIFTIFY_CODESIGN_IDENTITY} $<TARGET_BUNDLE_DIR:swiftify>
+    set(SWIFTY_CODESIGN_IDENTITY "-" CACHE STRING "codesign identity for the app bundle; - signs ad hoc")
+    add_custom_command(TARGET swifty POST_BUILD
+        COMMAND xattr -cr $<TARGET_BUNDLE_DIR:swifty>
+        COMMAND codesign --force --sign ${SWIFTY_CODESIGN_IDENTITY} $<TARGET_BUNDLE_DIR:swifty>
         COMMENT "Signing the app bundle")
 endif()
 
@@ -499,22 +446,21 @@ if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-install(TARGETS swiftify
+# the licence and the credits go with every install, and so do the licences
+# of what is built into the app or bundled with it
+install(FILES LICENSE THIRD_PARTY_LICENSES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/swifty)
+install(FILES ${SWIFTY_THIRD_PARTY_LICENSES} DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/swifty)
+
+install(TARGETS swifty
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     BUNDLE DESTINATION .)
-# the gpl has to go out with every copy of swiftify, so the tarball and the
-# windows zip carry it here and the app bundle in its resources
-if(NOT APPLE)
-    install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/swiftify)
-    install(FILES ${SWIFTIFY_THIRD_PARTY_LICENSES} DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/swiftify)
-endif()
 if(NOT APPLE AND NOT WIN32)
     # the desktop entry's name is the wayland app id (see main.cpp), which is
     # how hyprland and the tray match the window to its icon
-    install(FILES packaging/swiftify.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES packaging/swifty.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
     foreach(size 32 48 64 128 256 512)
-        install(FILES packaging/icons/swiftify-${size}.png
+        install(FILES packaging/icons/swifty-${size}.png
             DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps
-            RENAME swiftify.png)
+            RENAME swifty.png)
     endforeach()
 endif()

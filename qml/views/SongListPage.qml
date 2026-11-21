@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,11 +20,12 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
-import Swiftify
+import Swifty
 
 // a collection page: a header, then its songs as list rows, with room for a
 // loading or empty state in between.
 ListView {
+    WheelScroll {}
     id: root
 
     // pages run up under the top bar, which floats over them with no
@@ -33,7 +35,7 @@ ListView {
     property SongListModel songs
     property Component hero
     property bool loading: false
-    property string loadingText: qsTr("Loading songs…")
+    property string loadingText: "Loading songs…"
     property bool showsEmpty: false
     property string emptySymbol: "music_note"
     property string emptyTitle

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,7 +17,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "app/Translations.h"
 #include "FakeCore.h"
 #include "ViewRig.h"
 
@@ -32,9 +32,6 @@
 #include "playback/PlaybackController.h"
 #include "render/SpectrumItem.h"
 #include "render/SpectrumSource.h"
-#include "spotify/CredentialStore.h"
-#include "spotify/OAuthFlow.h"
-#include "spotify/SpotifySession.h"
 #include "theme/PlayerStyle.h"
 #include "theme/Theme.h"
 
@@ -60,7 +57,6 @@
 #include <QQuickRenderTarget>
 #include <QQuickWindow>
 #include <QRegularExpression>
-#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QSignalSpy>
 #include <QTest>
@@ -69,8 +65,8 @@
 
 #include <utility>
 
-using namespace swiftify;
-using swiftify::testing::FakeCore;
+using namespace swifty;
+using swifty::testing::FakeCore;
 
 namespace {
 
@@ -90,67 +86,6 @@ public:
     }
 };
 
-/// spotify's token endpoint, as far as a login goes: every request is
-/// answered with a fresh token
-class TokenServer : public QObject {
-    Q_OBJECT
-
-public:
-    TokenServer()
-    {
-        server.listen(QHostAddress::LocalHost);
-        connect(&server, &QTcpServer::newConnection, this, [this] {
-            while (QTcpSocket *socket = server.nextPendingConnection()) {
-                connect(socket, &QTcpSocket::readyRead, socket, [socket] {
-                    const QByteArray request = socket->peek(socket->bytesAvailable());
-                    const qsizetype body = request.indexOf("\r\n\r\n");
-                    const qsizetype length = request.mid(request.toLower().indexOf("content-length:") + 15).trimmed().split('\r').value(0).toInt();
-                    if (body < 0 || request.size() < body + 4 + length) {
-                        return;
-                    }
-                    socket->readAll();
-                    const QByteArray json = R"({"access_token":"access","refresh_token":"refresh","expires_in":3600})";
-                    socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
-                                  + QByteArray::number(json.size()) + "\r\nConnection: close\r\n\r\n" + json);
-                    socket->disconnectFromHost();
-                });
-                connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
-            }
-        });
-    }
-
-    QUrl url() const { return QUrl(QStringLiteral("http://127.0.0.1:%1/api/token").arg(server.serverPort())); }
-
-    QTcpServer server;
-};
-
-/// the browser a login page opens in, which the test plays the part of
-class Browser : public QObject {
-    Q_OBJECT
-
-public:
-    QList<QUrl> opened;
-
-    /// spotify, approving, sends it back to the app
-    void approve()
-    {
-        const QString state = QUrlQuery(opened.last()).queryItemValue(QStringLiteral("state"));
-        QTcpSocket socket;
-        socket.connectToHost(QHostAddress::LocalHost, OAuthFlow::kRedirectPort);
-        if (!socket.waitForConnected(2000)) {
-            return;
-        }
-        socket.write(QStringLiteral("GET /login?code=approved&state=%1 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
-                         .arg(state)
-                         .toUtf8());
-        socket.waitForBytesWritten(2000);
-        socket.waitForReadyRead(2000);
-    }
-
-public slots:
-    void open(const QUrl &url) { opened.append(url); }
-};
-
 } // namespace
 
 /// the views build, lay out and draw without a single warning, with a song
@@ -166,273 +101,13 @@ class ViewsTest : public QObject {
     Q_OBJECT
 
 private:
-    using Rig = swiftify::testing::ViewRig;
+    using Rig = swifty::testing::ViewRig;
 
 private slots:
-    void englishLabelsKeepTheirOriginalWording()
-    {
-        Rig rig;
-        rig.settings.setLanguage(QStringLiteral("en"));
-        Translations translations(&rig.settings);
-        QQmlComponent phrase(&rig.engine);
-        phrase.setData("import QtQml\nimport Swiftify\n"
-                       "QtObject { property string text: UiState.catchphrase }", QUrl());
-        std::unique_ptr<QObject> object(phrase.create());
-        QVERIFY2(object, qPrintable(phrase.errorString()));
-        QCOMPARE(object->property("text").toString(), QStringLiteral("i mean i guess bro"));
-
-        const auto panel = rig.show(QStringLiteral("SleepTimerPanel"));
-        QVERIFY(panel);
-        QList<QQuickItem *> queue{panel.get()};
-        QStringList labels;
-        for (qsizetype index = 0; index < queue.size(); ++index) {
-            auto *item = queue.at(index);
-            queue.append(item->childItems());
-            if (item->objectName() == QLatin1StringView("segmentLabel")) labels.append(item->property("text").toString());
-        }
-        QCOMPARE(labels, QStringList({QStringLiteral("None"), QStringLiteral("Last 10 Seconds"), QStringLiteral("Whole Timer")}));
-
-        const auto stats = rig.show(QStringLiteral("StatsView"));
-        QVERIFY(stats);
-        QString hour;
-        QVERIFY(QMetaObject::invokeMethod(stats.get(), "hourName", Q_RETURN_ARG(QString, hour), Q_ARG(int, 13)));
-        QCOMPARE(hour, QStringLiteral("1 PM"));
-    }
-
-    void russianSleepTimerLabelsFitTheirSegments()
-    {
-        fonts::loadIconFont();
-        Rig rig;
-        rig.window->setColor(QColor(QStringLiteral("#423d58")));
-        rig.settings.setLanguage(QStringLiteral("ru"));
-        Translations translations(&rig.settings);
-        const auto panel = rig.show(QStringLiteral("SleepTimerPanel"));
-        QVERIFY(panel);
-        auto *picker = panel->findChild<QQuickItem *>(QStringLiteral("sleepTimerFadePicker"));
-        QVERIFY(picker);
-        for (int width : {380, 300}) {
-            panel->setWidth(width);
-            Rig::settle();
-            rig.render();
-            if (width == 380) {
-                const QString path = qEnvironmentVariable("SWIFTIFY_TEST_SCREENSHOT");
-                if (!path.isEmpty()) {
-                    const qreal ratio = rig.window->devicePixelRatio();
-                    QVERIFY(rig.render().copy(0, 0, qRound(width * ratio),
-                                              qRound((panel->implicitHeight() + 8) * ratio)).save(path));
-                }
-            }
-            QList<QQuickItem *> labels;
-            QList<QQuickItem *> queue{picker};
-            for (qsizetype index = 0; index < queue.size(); ++index) {
-                auto *item = queue.at(index);
-                queue.append(item->childItems());
-                if (item->objectName() == QLatin1StringView("segmentLabel")) labels.append(item);
-            }
-            QCOMPARE(labels.size(), 3);
-            QCOMPARE(labels.at(1)->property("text").toString(), QStringLiteral("За 10 с"));
-            for (auto *label : labels) {
-                QVERIFY(label->width() > 0);
-                QVERIFY(label->property("contentWidth").toReal() <= label->width() + 1);
-            }
-        }
-    }
-
-    void fullScreenVisualizerCanBeDisabledIndependently()
-    {
-        Rig rig;
-        rig.playSomething();
-        rig.settings.setVisualizersEnabled(true);
-        rig.settings.setImmersiveVisualizer(true);
-        const auto immersive = rig.show(QStringLiteral("ImmersivePlayer"));
-        QVERIFY(immersive);
-        QCOMPARE(immersive->property("showsSpectrum").toBool(), true);
-        const auto sound = rig.show(QStringLiteral("SoundPanel"));
-        QVERIFY(sound);
-        auto *toggle = sound->findChild<QObject *>(QStringLiteral("immersiveVisualizerQuickSwitch"));
-        QVERIFY(toggle);
-        QCOMPARE(toggle->property("checked").toBool(), true);
-        toggle->setProperty("checked", false);
-        QVERIFY(QMetaObject::invokeMethod(toggle, "toggled"));
-        QVERIFY(!rig.settings.immersiveVisualizer());
-        QCOMPARE(immersive->property("showsSpectrum").toBool(), false);
-        auto *equalizerSpectrum = sound->findChild<QObject *>(QStringLiteral("immersiveEqualizerSpectrum"));
-        QVERIFY(equalizerSpectrum);
-        QCOMPARE(equalizerSpectrum->property("visible").toBool(), false);
-        QCOMPARE(equalizerSpectrum->property("active").toBool(), false);
-        QVERIFY(rig.settings.visualizersEnabled());
-        rig.settings.setImmersiveVisualizer(true);
-        Rig::settle();
-        QCOMPARE(toggle->property("checked").toBool(), true);
-    }
-
-    void languageSelectionRetranslatesTheSettings()
-    {
-        if (!kRussianTranslationEnabled) {
-            QSKIP("Russian translation is disabled.");
-        }
-        Rig rig;
-        rig.settings.setLanguage(QStringLiteral("en"));
-        Translations translations(&rig.settings);
-        connect(&translations, &Translations::languageChanged, &rig.engine, &QQmlEngine::retranslate);
-        const auto pages = rig.show(QStringLiteral("SettingsPages"));
-        QVERIFY(pages);
-        pages->setProperty("page", 4);
-        auto *selection = pages->findChild<QObject *>(QStringLiteral("languageSelection"));
-        QVERIFY(selection);
-        QCOMPARE(selection->property("text").toString(), QStringLiteral("Interface language"));
-        QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 2)));
-        QCOMPARE(rig.settings.language(), QStringLiteral("ru"));
-        QCOMPARE(selection->property("text").toString(), QStringLiteral("Язык интерфейса"));
-        for (int page = 0; page < 8; ++page) {
-            pages->setProperty("page", page);
-            Rig::settle();
-            QVERIFY(!rig.render().isNull());
-        }
-        QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 1)));
-        QCOMPARE(rig.settings.language(), QStringLiteral("en"));
-        QCOMPARE(selection->property("text").toString(), QStringLiteral("Interface language"));
-    }
-
-    void germanSegmentSwitchesTheInterface()
-    {
-        if (!kGermanTranslationEnabled) {
-            QSKIP("German translation is disabled.");
-        }
-        Rig rig;
-        rig.settings.setLanguage(QStringLiteral("en"));
-        Translations translations(&rig.settings);
-        connect(&translations, &Translations::languageChanged, &rig.engine, &QQmlEngine::retranslate);
-        const auto pages = rig.show(QStringLiteral("SettingsPages"));
-        QVERIFY(pages);
-        pages->setProperty("page", 4);
-        auto *selection = pages->findChild<QObject *>(QStringLiteral("languageSelection"));
-        QVERIFY(selection);
-        QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 3)));
-        QCOMPARE(rig.settings.language(), QStringLiteral("de"));
-        QCOMPARE(selection->property("text").toString(), QStringLiteral("Sprache der Oberfläche"));
-        for (int page = 0; page < 8; ++page) {
-            pages->setProperty("page", page);
-            Rig::settle();
-            QVERIFY(!rig.render().isNull());
-        }
-        QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 1)));
-        QCOMPARE(rig.settings.language(), QStringLiteral("en"));
-        QCOMPARE(selection->property("text").toString(), QStringLiteral("Interface language"));
-    }
-
-    void disabledGermanIsGrayedOutWithTooltipAndSwitchesBackToEnglish()
-    {
-        if (!kGermanTranslationEnabled) {
-            QSKIP("German translation is disabled.");
-        }
-        const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
-        Translations::setLanguageEnabled(QStringLiteral("de"), true);
-        Rig rig;
-        rig.settings.setLanguage(QStringLiteral("de"));
-        Translations translations(&rig.settings);
-        connect(&translations, &Translations::languageChanged, &rig.engine, &QQmlEngine::retranslate);
-        const auto pages = rig.show(QStringLiteral("SettingsPages"));
-        QVERIFY(pages);
-        pages->setProperty("page", 4);
-        Rig::settle();
-
-        Translations::setLanguageEnabled(QStringLiteral("de"), false);
-        Rig::settle();
-        rig.render();
-
-        QCOMPARE(rig.settings.language(), QStringLiteral("en"));
-        QCOMPARE(rig.errors.message(),
-                 QStringLiteral("this language is currently disabled due to missing language maintainers. your app language has been switched back to english."));
-
-        auto *selection = pages->findChild<QQuickItem *>(QStringLiteral("languageSelection"));
-        QVERIFY(selection);
-        QCOMPARE(selection->property("currentIndex").toInt(), 1);
-
-        QQmlListReference segments(selection, "segments");
-        QCOMPARE(segments.count(), 4);
-        QObject *germanSegment = segments.at(3);
-        QVERIFY(germanSegment);
-        QCOMPARE(germanSegment->property("enabled").toBool(), false);
-        QCOMPARE(germanSegment->property("tooltip").toString(),
-                 QStringLiteral("this language is currently disabled due to missing language maintainers"));
-    }
-
-    void disabledLanguageIsGrayedOutWithTooltipAndSwitchesBackToEnglish()
-    {
-        const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
-        Translations::setLanguageEnabled(QStringLiteral("ru"), true);
-        Rig rig;
-        rig.settings.setLanguage(QStringLiteral("ru"));
-        Translations translations(&rig.settings);
-        connect(&translations, &Translations::languageChanged, &rig.engine, &QQmlEngine::retranslate);
-        const auto pages = rig.show(QStringLiteral("SettingsPages"));
-        QVERIFY(pages);
-        pages->setProperty("page", 4);
-        Rig::settle();
-
-        Translations::setLanguageEnabled(QStringLiteral("ru"), false);
-        Rig::settle();
-        rig.render();
-
-        QCOMPARE(rig.settings.language(), QStringLiteral("en"));
-        QCOMPARE(rig.errors.message(),
-                 QStringLiteral("this language is currently disabled due to missing language maintainers. your app language has been switched back to english."));
-
-        auto *selection = pages->findChild<QQuickItem *>(QStringLiteral("languageSelection"));
-        QVERIFY(selection);
-        QCOMPARE(selection->property("currentIndex").toInt(), 1);
-
-        QQmlListReference segments(selection, "segments");
-        QCOMPARE(segments.count(), 4);
-        QObject *russianSegment = segments.at(2);
-        QVERIFY(russianSegment);
-        QCOMPARE(russianSegment->property("enabled").toBool(), false);
-        QCOMPARE(russianSegment->property("tooltip").toString(),
-                 QStringLiteral("this language is currently disabled due to missing language maintainers"));
-
-        QQuickItem *russianButton = nullptr;
-        QList<QQuickItem *> queue {selection};
-        for (qsizetype i = 0; i < queue.size(); ++i) {
-            QQuickItem *item = queue.at(i);
-            queue.append(item->childItems());
-            if (item->property("tooltip").toString()
-                == QStringLiteral("this language is currently disabled due to missing language maintainers")) {
-                russianButton = item;
-                break;
-            }
-        }
-        QVERIFY(russianButton);
-        QCOMPARE(russianButton->isEnabled(), false);
-        QVERIFY(qFuzzyCompare(russianButton->opacity(), 0.38));
-
-        const QPoint hoverPoint = russianButton->mapToScene(
-            QPointF(russianButton->width() / 2.0, russianButton->height() / 2.0)).toPoint();
-        QMouseEvent move(QEvent::MouseMove, hoverPoint, hoverPoint, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-        QCoreApplication::sendEvent(rig.window.get(), &move);
-        Rig::settle();
-        rig.render();
-
-        bool foundTooltip = false;
-        QList<QQuickItem *> tooltipQueue {selection};
-        for (qsizetype i = 0; i < tooltipQueue.size(); ++i) {
-            QQuickItem *item = tooltipQueue.at(i);
-            tooltipQueue.append(item->childItems());
-            if (QObject *loaded = item->property("item").value<QObject *>()) {
-                if (loaded->property("text").toString()
-                    == QStringLiteral("this language is currently disabled due to missing language maintainers")) {
-                    foundTooltip = true;
-                    break;
-                }
-            }
-        }
-        QVERIFY(foundTooltip);
-    }
-
     void initTestCase()
     {
         // the face the app draws in, as main() loads it
-        swiftify::fonts::loadInterfaceFont();
+        swifty::fonts::loadInterfaceFont();
         // as main() sets it, before anything draws text
         qputenv("QT_MAX_CACHED_GLYPH_SIZE", "512");
 #ifdef Q_OS_MACOS
@@ -446,7 +121,7 @@ private slots:
     void init()
     {
         // macos's offscreen platform has no "Sans Serif"; nothing on linux says this
-        QTest::failOnWarning(QRegularExpression(QStringLiteral("^(?!(Populating font family aliases|.*QWaylandTextInputv3)).*")));
+        QTest::failOnWarning(QRegularExpression(QStringLiteral("^(?!Populating font family aliases).*")));
     }
 
     void immersivePanels_data()
@@ -526,306 +201,6 @@ private slots:
         QVERIFY(panel->x() >= 0);
     }
 
-    void immersivePlayerDistractionFreeMode()
-    {
-        Rig rig;
-        rig.playSomething();
-        const auto player = rig.show(QStringLiteral("ImmersivePlayer"));
-        QVERIFY(player);
-        auto *close = player->findChild<QQuickItem *>(QStringLiteral("immersiveCloseButton"));
-        auto *dfButton = player->findChild<QQuickItem *>(QStringLiteral("immersiveDistractionFreeButton"));
-        auto *transport = player->findChild<QQuickItem *>(QStringLiteral("immersiveTransport"));
-        auto *nowPlaying = player->findChild<QQuickItem *>(QStringLiteral("immersiveNowPlaying"));
-        auto *seek = player->findChild<QQuickItem *>(QStringLiteral("immersiveSeek"));
-        auto *artwork = player->findChild<QQuickItem *>(QStringLiteral("immersiveArtwork"));
-        auto *title = player->findChild<QQuickItem *>(QStringLiteral("immersiveTitle"));
-        auto *artist = player->findChild<QQuickItem *>(QStringLiteral("immersiveArtist"));
-        auto *more = player->findChild<QQuickItem *>(QStringLiteral("immersiveMoreButton"));
-        auto *timer = player->findChild<QObject *>(QStringLiteral("inactivityTimer"));
-        QVERIFY(close);
-        QVERIFY(dfButton);
-        QVERIFY(transport);
-        QVERIFY(nowPlaying);
-        QVERIFY(seek);
-        QVERIFY(artwork);
-        QVERIFY(title);
-        QVERIFY(artist);
-        QVERIFY(more);
-        QVERIFY(timer);
-
-        // Artist text is horizontally centered with title, and more button sits to its right
-        const qreal titleCenter = title->mapToItem(nowPlaying, QPointF(title->width() / 2.0, 0)).x();
-        const qreal artistCenter = artist->mapToItem(nowPlaying, QPointF(artist->width() / 2.0, 0)).x();
-        QVERIFY(std::abs(titleCenter - artistCenter) < 1.0);
-        QVERIFY(more->x() > artist->x());
-        QCOMPARE(more->property("opacity").toReal(), 1.0);
-
-        // Initially distraction-free is off, controls are fully visible
-        QCOMPARE(player->property("distractionFree").toBool(), false);
-        QCOMPARE(player->property("controlsHidden").toBool(), false);
-        QCOMPARE(player->property("controlsOpacity").toReal(), 1.0);
-        QCOMPARE(transport->property("opacity").toReal(), 1.0);
-        QCOMPARE(dfButton->property("symbol").toString(), QStringLiteral("fullscreen"));
-        const qreal yBeforeInactivity = nowPlaying->y();
-
-        // Click fullscreen / distraction-free button
-        QVERIFY(QMetaObject::invokeMethod(dfButton, "clicked"));
-        Rig::settle();
-        QCOMPARE(player->property("distractionFree").toBool(), true);
-        QCOMPARE(dfButton->property("symbol").toString(), QStringLiteral("fullscreen_exit"));
-
-        // Trigger inactivity timer (simulating 5 seconds of no mouse movement)
-        auto *tracker = player->findChild<QObject *>(QStringLiteral("activityTracker"));
-        auto *cursorOverlay = player->findChild<QQuickItem *>(QStringLiteral("blankCursorOverlay"));
-        auto *hideAnim = player->findChild<QObject *>(QStringLiteral("hideControlsAnimation"));
-        auto *showAnim = player->findChild<QObject *>(QStringLiteral("showControlsAnimation"));
-        QVERIFY(hideAnim && showAnim);
-        QVERIFY(tracker && cursorOverlay);
-        QCOMPARE(tracker->property("cursorShape").toInt(), static_cast<int>(Qt::ArrowCursor));
-        QVERIFY(!cursorOverlay->isVisible());
-        tracker->setProperty("enabled", false);
-        QVERIFY(QMetaObject::invokeMethod(timer, "triggered"));
-        Rig::settle();
-        QCOMPARE(player->property("controlsHidden").toBool(), true);
-        for (int frame = 0; frame < 120 && hideAnim->property("running").toBool(); ++frame) {
-            QTest::qWait(16);
-            rig.render();
-        }
-        QCOMPARE(player->property("controlsOpacity").toReal(), 0.0);
-        QCOMPARE(transport->property("opacity").toReal(), 0.0);
-        QCOMPARE(more->property("opacity").toReal(), 0.0);
-        // Cursor is hidden in focus mode
-        QCOMPARE(tracker->property("cursorShape").toInt(), static_cast<int>(Qt::BlankCursor));
-        QVERIFY(cursorOverlay->isVisible());
-        // Whole group smoothly moves down into center
-        QVERIFY(nowPlaying->y() > yBeforeInactivity);
-        // Artwork and seek bar remain visible
-        QVERIFY(artwork->isVisible());
-        QVERIFY(seek->isVisible());
-
-        // Mouse movement / activity wakes controls smoothly, restores cursor, and moves group back up
-        tracker->setProperty("enabled", true);
-        QVERIFY(QMetaObject::invokeMethod(player.get(), "registerActivity"));
-        Rig::settle();
-        QCOMPARE(player->property("controlsHidden").toBool(), false);
-        for (int frame = 0; frame < 120 && showAnim->property("running").toBool(); ++frame) {
-            QTest::qWait(16);
-            rig.render();
-        }
-        QCOMPARE(player->property("controlsOpacity").toReal(), 1.0);
-        QCOMPARE(transport->property("opacity").toReal(), 1.0);
-        QCOMPARE(more->property("opacity").toReal(), 1.0);
-        QCOMPARE(tracker->property("cursorShape").toInt(), static_cast<int>(Qt::ArrowCursor));
-        QVERIFY(!cursorOverlay->isVisible());
-        QCOMPARE(nowPlaying->y(), yBeforeInactivity);
-
-        // Escape key exits distraction-free mode
-        QKeyEvent escEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
-        QCoreApplication::sendEvent(player.get(), &escEvent);
-        Rig::settle();
-        QCOMPARE(player->property("distractionFree").toBool(), false);
-        QCOMPARE(dfButton->property("symbol").toString(), QStringLiteral("fullscreen"));
-
-        // Queue panel is preserved during distraction-free mode
-        QMetaObject::invokeMethod(player.get(), "swapPanel", QStringLiteral("queue"), true);
-        Rig::settle();
-        QVERIFY(QMetaObject::invokeMethod(dfButton, "clicked"));
-        Rig::settle();
-        QCOMPARE(player->property("distractionFree").toBool(), true);
-        if (tracker) tracker->setProperty("enabled", false);
-        QVERIFY(QMetaObject::invokeMethod(timer, "triggered"));
-        Rig::settle();
-        for (int frame = 0; frame < 120 && hideAnim->property("running").toBool(); ++frame) {
-            QTest::qWait(16);
-            rig.render();
-        }
-        QCOMPARE(player->property("controlsOpacity").toReal(), 0.0);
-        QCOMPARE(player->property("panelRetainedInDistractionFree").toBool(), true);
-        QCOMPARE(player->property("panelDistractionFreeOpacity").toReal(), 1.0);
-
-        // Sound/equalizer panel fades out in distraction-free mode
-        QMetaObject::invokeMethod(player.get(), "swapPanel", QStringLiteral("audio"), true);
-        for (int frame = 0; frame < 60 && player->property("shownPanel").toString() != QStringLiteral("audio"); ++frame) {
-            QTest::qWait(16);
-            rig.render();
-        }
-        QCOMPARE(player->property("shownPanel").toString(), QStringLiteral("audio"));
-        QCOMPARE(player->property("panelRetainedInDistractionFree").toBool(), false);
-        QCOMPARE(player->property("panelDistractionFreeOpacity").toReal(), 0.0);
-        QCOMPARE(player->property("effectiveUsesPanelLayout").toBool(), false);
-        QCOMPARE(player->property("sideBySide").toBool(), false);
-
-        // Clicking distraction-free button exits mode
-        QVERIFY(QMetaObject::invokeMethod(dfButton, "clicked"));
-        Rig::settle();
-        QCOMPARE(player->property("distractionFree").toBool(), false);
-        QCOMPARE(player->property("controlsOpacity").toReal(), 1.0);
-        QCOMPARE(player->property("panelDistractionFreeOpacity").toReal(), 1.0);
-        QCOMPARE(player->property("effectiveUsesPanelLayout").toBool(), true);
-        QCOMPARE(player->property("sideBySide").toBool(), true);
-    }
-
-    /// lyrics scrolled up past the panel are faded out of sight, and the
-    /// buttons over them take the click, not the lines
-    void scrolledLyricsLeaveTheTopBarClickable()
-    {
-        Rig rig;
-        rig.settings.setPerformanceMode(true);
-        QFile lyrics(rig.directory.filePath(QStringLiteral("sung.lrc")));
-        QVERIFY(lyrics.open(QIODevice::WriteOnly));
-        for (int line = 0; line < 40; ++line) {
-            lyrics.write(QStringLiteral("[%1:%2.00]line %3\n")
-                             .arg(line * 5 / 60, 2, 10, QLatin1Char('0'))
-                             .arg(line * 5 % 60, 2, 10, QLatin1Char('0'))
-                             .arg(line)
-                             .toUtf8());
-        }
-        lyrics.close();
-        Song song;
-        song.uri = QUrl::fromLocalFile(rig.directory.filePath(QStringLiteral("sung.flac"))).toString();
-        song.durationMs = 200'000;
-        rig.player.play(song, {song});
-        Rig::settle();
-        QVERIFY(rig.player.lyricsSynchronized());
-        rig.settings.setImmersivePlayerPanel(QStringLiteral("lyrics"));
-        const auto player = rig.show(QStringLiteral("ImmersivePlayer"));
-        QVERIFY(player);
-        // the smallest window shows the lyrics alone, right under the top bar
-        player->setSize(QSize(526, 410));
-        Rig::settle();
-        QVERIFY(player->property("panelOnly").toBool());
-        auto *list = player->findChild<QQuickItem *>(QStringLiteral("immersiveLyricsList"));
-        auto *close = player->findChild<QQuickItem *>(QStringLiteral("immersiveCloseButton"));
-        auto *switcher = player->findChild<QQuickItem *>(QStringLiteral("immersiveSwitcher"));
-        QVERIFY(list && close && switcher);
-        list->setProperty("contentY", 600.0);
-        Rig::settle();
-        rig.render();
-
-        const auto click = [&](QPointF point) {
-            QTest::mouseClick(rig.window.get(), Qt::LeftButton, Qt::NoModifier, point.toPoint());
-            Rig::settle();
-        };
-        QSignalSpy closing(player.get(), SIGNAL(closeRequested()));
-        click(close->mapToScene(QPointF(close->width() / 2, close->height() / 2)));
-        QCOMPARE(closing.count(), 1);
-        // the switcher's last segment, Sound, on the right of the bar
-        click(switcher->mapToScene(QPointF(switcher->width() - 14, switcher->height() / 2)));
-        QTRY_COMPARE(player->property("panel").toString(), QStringLiteral("audio"));
-    }
-
-    /// in a short window the settings rail scrolls to its last destinations,
-    /// and shows its scroll bar only then
-    void theSettingsRailScrollsInShortWindows()
-    {
-        Rig rig;
-        QQmlComponent component(&rig.engine);
-        // a plain window's overlay has no size, so the dialog sits in a host
-        // the size of the window it would cover
-        component.setData("import QtQuick\nimport Swiftify\nItem { id: host; width: 1280; height: 780\n"
-                          "    property alias dialog: settings\n"
-                          "    SettingsDialog { id: settings; parent: host } }",
-                          QUrl());
-        std::unique_ptr<QObject> object(component.create());
-        QVERIFY2(object, qPrintable(component.errorString()));
-        qobject_cast<QQuickItem *>(object.get())->setParentItem(rig.window->contentItem());
-        auto *dialog = object->property("dialog").value<QObject *>();
-        QVERIFY(dialog);
-        QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
-        QTRY_VERIFY(dialog->property("opened").toBool());
-        auto *rail = object->findChild<QQuickItem *>(QStringLiteral("settingsRail"));
-        QVERIFY(rail);
-        auto *bar = QQmlProperty(rail, QStringLiteral("ScrollBar.vertical"), qmlContext(rail)).read().value<QQuickItem *>();
-        QVERIFY(bar);
-
-        // everything fits in the usual window: nothing scrolls or shows
-        Rig::settle();
-        rig.render();
-        QVERIFY(!rail->property("interactive").toBool());
-        QVERIFY(!bar->isVisible());
-
-        qobject_cast<QQuickItem *>(object.get())->setSize(QSizeF(526, 410));
-        Rig::settle();
-        rig.render();
-        QVERIFY(rail->property("interactive").toBool());
-        QVERIFY(bar->isVisible());
-        const qreal bottom = rail->property("contentHeight").toReal() - rail->height();
-        rail->setProperty("contentY", bottom);
-        Rig::settle();
-        rig.render();
-        // About, the last destination, sits just above the rail's bottom edge
-        QTest::mouseClick(rig.window.get(), Qt::LeftButton, Qt::NoModifier,
-                          rail->mapToScene(QPointF(rail->width() / 2, rail->height() - 48)).toPoint());
-        QTRY_COMPARE(dialog->property("page").toInt(), 7);
-    }
-
-    void longSongTitlesScrollInImmersivePlayer()
-    {
-        Rig rig;
-        QList<Song> queue;
-        Song longSong;
-        longSong.name = QStringLiteral("This Is An Incredibly Long Song Title That Far Exceeds Normal Metadata Width whoever reads this pls save yourself this file is way too long");
-        longSong.artists = QStringLiteral("Artist");
-        longSong.albumName = QStringLiteral("Album");
-        longSong.uri = QUrl::fromLocalFile(QStringLiteral("/music/longsong.flac")).toString();
-        longSong.durationMs = 200'000;
-        queue.append(longSong);
-
-        rig.player.play(queue[0], queue);
-        Rig::settle();
-        const auto call = rig.core.take(QStringLiteral("playFile"));
-        QVERIFY(call);
-        call->succeed();
-        Rig::settle();
-
-        const auto player = rig.show(QStringLiteral("ImmersivePlayer"));
-        QVERIFY(player);
-        auto *titleItem = player->findChild<QQuickItem *>(QStringLiteral("immersiveTitle"));
-        QVERIFY(titleItem);
-        QCOMPARE(titleItem->property("text").toString(), longSong.name);
-        QVERIFY(titleItem->property("overflows").toBool());
-        QVERIFY(titleItem->property("shouldScroll").toBool());
-        // when standing still at the start, the left side has no fade so the first character is not cut off or faded
-        QCOMPARE(titleItem->property("leftEdge").toReal(), 0.0);
-        QVERIFY(titleItem->property("rightEdge").toReal() > 0.0);
-
-        Song shortSong;
-        shortSong.name = QStringLiteral("Hi");
-        shortSong.artists = QStringLiteral("Artist");
-        shortSong.albumName = QStringLiteral("Album");
-        shortSong.uri = QUrl::fromLocalFile(QStringLiteral("/music/shortsong.flac")).toString();
-        shortSong.durationMs = 200'000;
-        queue[0] = shortSong;
-        rig.player.play(queue[0], queue);
-        Rig::settle();
-        const auto call2 = rig.core.take(QStringLiteral("playFile"));
-        QVERIFY(call2);
-        call2->succeed();
-        Rig::settle();
-
-        QCOMPARE(titleItem->property("text").toString(), shortSong.name);
-        QVERIFY(!titleItem->property("overflows").toBool());
-        QVERIFY(!titleItem->property("shouldScroll").toBool());
-
-        auto *artistItem = player->findChild<QQuickItem *>(QStringLiteral("immersiveArtist"));
-        QVERIFY(artistItem);
-        const qreal oldArtistWidth = artistItem->implicitWidth();
-        QVERIFY(oldArtistWidth > 0);
-
-        Song longArtistSong = shortSong;
-        longArtistSong.instanceId = Song().instanceId;
-        longArtistSong.artists = QStringLiteral("A Vastly Longer Ensemble Orchestra Featuring Multiple Artists");
-        queue[0] = longArtistSong;
-        rig.player.play(queue[0], queue);
-        Rig::settle();
-        const auto call3 = rig.core.take(QStringLiteral("playFile"));
-        QVERIFY(call3);
-        call3->succeed();
-        Rig::settle();
-
-        QTRY_VERIFY(artistItem->implicitWidth() > oldArtistWidth);
-    }
-
     void multilineLyricsStayInsideTheirHighlight_data()
     {
         QTest::addColumn<QString>("words");
@@ -890,7 +265,7 @@ private slots:
         const QPointF origin = line->mapToScene(QPointF());
         const QRect pixels(qRound(origin.x() * ratio), qRound(origin.y() * ratio),
                            qRound(line->width() * ratio), qRound(line->height() * ratio));
-        const QString preview = qEnvironmentVariable("SWIFTIFY_LYRICS_PREVIEW");
+        const QString preview = qEnvironmentVariable("SWIFTY_LYRICS_PREVIEW");
         if (!preview.isEmpty()) {
             rig.window->setColor(QColor(QStringLiteral("#381c23")));
             rig.render();
@@ -936,7 +311,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "CollectionHero { width: 480; kind: 'PLAYLIST'; title: 'Ddd'; facts: '10 songs'\n"
                           "  actions: [TextButton { objectName: 'heroPlay'; text: 'Play'; symbol: 'play_arrow'; wavy: true; iconOnly: parent ? parent.compactActions : false },\n"
                           "            TextButton { objectName: 'heroShuffle'; text: 'Shuffle'; symbol: 'shuffle'; wavy: true; iconOnly: parent ? parent.compactActions : false }] }",
@@ -991,13 +366,13 @@ private slots:
         Rig rig;
         const QList<std::pair<const char *, QObject *>> singletons {
             {"Settings", &rig.settings}, {"Theme", &rig.theme}, {"Errors", &rig.errors},
-            {"Session", &rig.session}, {"Player", &rig.player}, {"Library", &rig.library},
+            {"Player", &rig.player}, {"Library", &rig.library},
             {"Sound", &rig.sound}, {"App", &rig.app},
             {"PlayerStyle", &rig.style}, {"Spectrum", &rig.spectrum},
         };
         for (const auto &[name, expected] : singletons) {
             QQmlComponent probe(&rig.engine);
-            probe.setData(QByteArrayLiteral("import QtQuick\nimport Swiftify\nQtObject { property QtObject seen: ") + name
+            probe.setData(QByteArrayLiteral("import QtQuick\nimport Swifty\nQtObject { property QtObject seen: ") + name
                               + QByteArrayLiteral(" }"),
                           QUrl());
             std::unique_ptr<QObject> object(probe.create());
@@ -1043,19 +418,19 @@ private slots:
         rig.playSomething();
         const auto backdrop = rig.show(QStringLiteral("LiquidBackdrop"));
         QVERIFY(backdrop);
-        // the field is the accent green while nothing has artwork: whatever
+        // the field is the accent pink while nothing has artwork: whatever
         // the blur and the shade do, the middle of the window is not black
-        // and leans green
+        // and leans red
         const QColor middle = rig.frame.pixelColor(rig.frame.width() / 2, rig.frame.height() / 2);
-        QVERIFY2(middle.green() > 24, qPrintable(middle.name()));
-        QVERIFY2(middle.green() > middle.red(), qPrintable(middle.name()));
+        QVERIFY2(middle.red() > 24, qPrintable(middle.name()));
+        QVERIFY2(middle.red() > middle.green(), qPrintable(middle.name()));
     }
 
     void thePlaylistEditorOpensAndDrawsItsCovers()
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem {\n"
+        component.setData("import QtQuick\nimport Swifty\nItem {\n"
                           "    property alias editor: editor\n"
                           "    PlaylistEditor { id: editor }\n"
                           "}\n",
@@ -1075,127 +450,6 @@ private slots:
         const QImage frame = rig.render();
         QVERIFY(!frame.isNull());
         QCOMPARE(editor->property("headline").toString(), QStringLiteral("New Playlist"));
-    }
-
-    void tabKeyNavigatesPlaylistEditorFieldsAndButtons()
-    {
-        Rig rig;
-        QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem {\n"
-                          "    property alias editor: editor\n"
-                          "    PlaylistEditor { id: editor }\n"
-                          "}\n",
-                          QUrl());
-        std::unique_ptr<QObject> object(component.create());
-        QVERIFY2(object, qPrintable(component.errorString()));
-        auto *item = qobject_cast<QQuickItem *>(object.get());
-        item->setParentItem(rig.window->contentItem());
-        item->setSize(Rig::kSize);
-        auto *editor = object->property("editor").value<QObject *>();
-        QVERIFY(editor);
-        QMetaObject::invokeMethod(editor, "openForCreate");
-        Rig::settle();
-        rig.render();
-        QTRY_VERIFY(editor->property("opened").toBool());
-
-        // Focus starts on name field input
-        QQuickItem *focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QVERIFY(focusItem->parentItem());
-        QCOMPARE(focusItem->parentItem()->property("placeholder").toString(), QStringLiteral("Name"));
-
-        // Pressing Tab moves to description field without inserting spaces into name
-        QTest::keyClick(rig.window.get(), Qt::Key_Tab);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QVERIFY(focusItem->parentItem());
-        QCOMPARE(focusItem->parentItem()->property("placeholder").toString(), QStringLiteral("Description"));
-        QCOMPARE(focusItem->property("text").toString(), QStringLiteral(""));
-
-        // Pressing Shift+Tab moves back to name field
-        QTest::keyClick(rig.window.get(), Qt::Key_Backtab, Qt::ShiftModifier);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QVERIFY(focusItem->parentItem());
-        QCOMPARE(focusItem->parentItem()->property("placeholder").toString(), QStringLiteral("Name"));
-        QCOMPARE(focusItem->property("text").toString(), QStringLiteral(""));
-
-        // Enter name text so Save button becomes enabled
-        focusItem->setProperty("text", QStringLiteral("Roadtrip Tunes"));
-        Rig::settle();
-        QCOMPARE(focusItem->property("text").toString(), QStringLiteral("Roadtrip Tunes"));
-
-        // Tab to description field
-        QTest::keyClick(rig.window.get(), Qt::Key_Tab);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QVERIFY(focusItem->parentItem());
-        QCOMPARE(focusItem->parentItem()->property("placeholder").toString(), QStringLiteral("Description"));
-
-        // Tab from description to Public switch
-        QTest::keyClick(rig.window.get(), Qt::Key_Tab);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QVERIFY(QString::fromLatin1(focusItem->metaObject()->className()).startsWith(QLatin1StringView("StyledSwitch")));
-        const bool initialChecked = focusItem->property("checked").toBool();
-        QTest::keyClick(rig.window.get(), Qt::Key_Space);
-        Rig::settle();
-        QCOMPARE(focusItem->property("checked").toBool(), !initialChecked);
-
-        // Tab from Public switch to Save button
-        QTest::keyClick(rig.window.get(), Qt::Key_Tab);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QCOMPARE(focusItem->property("text").toString(), QStringLiteral("Save"));
-
-        // Tab from Save to Cancel button
-        QTest::keyClick(rig.window.get(), Qt::Key_Tab);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QCOMPARE(focusItem->property("text").toString(), QStringLiteral("Cancel"));
-
-        // Tab from Cancel wraps back to Name field
-        QTest::keyClick(rig.window.get(), Qt::Key_Tab);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QVERIFY(focusItem->parentItem());
-        QCOMPARE(focusItem->parentItem()->property("placeholder").toString(), QStringLiteral("Name"));
-
-        // For local playlists, the public switch is hidden so Tab skips it
-        QMetaObject::invokeMethod(editor, "close");
-        Rig::settle();
-        QMetaObject::invokeMethod(editor, "openForCreateLocal", Q_ARG(QVariant, QVariant()));
-        Rig::settle();
-        QTRY_VERIFY(editor->property("opened").toBool());
-
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QVERIFY(focusItem->parentItem());
-        QCOMPARE(focusItem->parentItem()->property("placeholder").toString(), QStringLiteral("Name"));
-        focusItem->setProperty("text", QStringLiteral("Local Gems"));
-        Rig::settle();
-
-        // Tab to description
-        QTest::keyClick(rig.window.get(), Qt::Key_Tab);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QVERIFY(focusItem->parentItem());
-        QCOMPARE(focusItem->parentItem()->property("placeholder").toString(), QStringLiteral("Description"));
-
-        // Tab from description skips hidden switch directly to Save button
-        QTest::keyClick(rig.window.get(), Qt::Key_Tab);
-        Rig::settle();
-        focusItem = rig.window->activeFocusItem();
-        QVERIFY(focusItem);
-        QCOMPARE(focusItem->property("text").toString(), QStringLiteral("Save"));
     }
 
     void everySettingsPageDraws()
@@ -1253,7 +507,7 @@ private slots:
         find(sidebar.get());
         QVERIFY(button);
         QVERIFY(button->isVisible());
-        auto *ui = rig.engine.singletonInstance<QObject *>("Swiftify", "UiState");
+        auto *ui = rig.engine.singletonInstance<QObject *>("Swifty", "UiState");
         QVERIFY(ui);
         QSignalSpy asked(ui, SIGNAL(settingsRequested()));
         QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
@@ -1277,11 +531,11 @@ private slots:
         if (!rig.gpu) {
             QSKIP("no gpu to draw with");
         }
-        swiftify::fonts::loadIconFont();
+        swifty::fonts::loadIconFont();
         rig.window->setColor(Qt::white);
         const auto draw = [&](const QString &item) {
             QQmlComponent component(&rig.engine);
-            component.setData(("import QtQuick\nimport Swiftify\nItem { width: 200; height: 200\n" + item + " }").toUtf8(), QUrl());
+            component.setData(("import QtQuick\nimport Swifty\nItem { width: 200; height: 200\n" + item + " }").toUtf8(), QUrl());
             std::unique_ptr<QObject> object(component.create());
             qobject_cast<QQuickItem *>(object.get())->setParentItem(rig.window->contentItem());
             Rig::settle();
@@ -1324,7 +578,7 @@ private slots:
         rig.window->setColor(Qt::white);
         const auto draw = [&](const QString &item) {
             QQmlComponent component(&rig.engine);
-            component.setData(("import QtQuick\nimport Swiftify\nItem { width: 300; height: 60\n" + item + " }").toUtf8(), QUrl());
+            component.setData(("import QtQuick\nimport Swifty\nItem { width: 300; height: 60\n" + item + " }").toUtf8(), QUrl());
             std::unique_ptr<QObject> object(component.create());
             if (!object) {
                 qWarning() << component.errors();
@@ -1384,11 +638,11 @@ private slots:
         if (!rig.gpu) {
             QSKIP("no gpu to draw with");
         }
-        swiftify::fonts::loadIconFont();
+        swifty::fonts::loadIconFont();
         rig.window->setColor(Qt::white);
         const auto draw = [&](const QString &item) {
             QQmlComponent component(&rig.engine);
-            component.setData(("import QtQuick\nimport Swiftify\nItem { width: 100; height: 100\n" + item + " }").toUtf8(), QUrl());
+            component.setData(("import QtQuick\nimport Swifty\nItem { width: 100; height: 100\n" + item + " }").toUtf8(), QUrl());
             std::unique_ptr<QObject> object(component.create());
             qobject_cast<QQuickItem *>(object.get())->setParentItem(rig.window->contentItem());
             Rig::settle();
@@ -1445,29 +699,19 @@ private slots:
         }
         rig.window->setColor(Qt::transparent);
         // a round cover `size` across with its top left at (20, 20), drawn
-        struct Drawn { QImage frame; qreal centre; qreal waves; qreal thickness; qreal amplitude; bool ready; };
+        struct Drawn { QImage frame; qreal centre; qreal waves; qreal thickness; qreal amplitude; };
         const auto draw = [&](bool squiggly, int size) {
             QQmlComponent component(&rig.engine);
-            component.setData(QStringLiteral("import QtQuick\nimport Swiftify\n"
+            component.setData(QStringLiteral("import QtQuick\nimport Swifty\n"
                                              "ArtworkImage { x: 20; y: 20; width: %2; height: %2; circular: true; "
                                              "squiggleColor: \"#00ff00\"; squiggly: %1 }")
                                   .arg(squiggly ? QStringLiteral("true") : QStringLiteral("false")).arg(size).toUtf8(), QUrl());
             std::unique_ptr<QObject> object(component.create());
             qobject_cast<QQuickItem *>(object.get())->setParentItem(rig.window->contentItem());
-            // Unlike the old solid rectangle, fallback sleeves are decoded
-            // asynchronously through the artwork provider. Test the cut only
-            // after its texture exists, not the transparent loading frame.
-            const bool ready = QTest::qWaitFor([&] {
-                for (QObject *child : object->findChildren<QObject *>()) {
-                    if (child->property("source").toUrl().toString().contains(QStringLiteral("swiftify-cover"))
-                        && child->property("status").toInt() == 1) return true; // Image.Ready
-                }
-                return false;
-            }, 2000);
             Rig::settle();
             rig.render();
             return Drawn { rig.render(), 20 + size / 2.0, object->property("squiggleWaves").toReal(),
-                           object->property("squiggleThickness").toReal(), object->property("squiggleAmplitude").toReal(), ready };
+                           object->property("squiggleThickness").toReal(), object->property("squiggleAmplitude").toReal() };
         };
         const auto at = [](const Drawn &drawn, qreal angle, qreal radius) {
             return drawn.frame.pixel(qFloor(drawn.centre + radius * std::sin(angle)),
@@ -1485,7 +729,6 @@ private slots:
 
         const Drawn plain = draw(false, 120);
         const Drawn squiggly = draw(true, 120);
-        QVERIFY(plain.ready && squiggly.ready);
         // just inside the plain cover's edge it is solid all the way round;
         // the squiggly one's edge comes and goes across that circle, as its
         // wave does, and nothing of it is outside the cover's own square
@@ -1506,7 +749,6 @@ private slots:
         // colour, a gap that shows what is behind, then the cover
         for (const int size : {120, 400}) {
             const Drawn drawn = draw(true, size);
-            QVERIFY(drawn.ready);
             const qreal t = drawn.thickness;
             const qreal middle = size / 2.0 - drawn.amplitude - t / 2 - 0.75;
             // the proportions hold, so a big cover's waves do not bunch up
@@ -1542,7 +784,7 @@ private slots:
         }
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.loadFromModule("Swiftify", "MacMenuBar");
+        component.loadFromModule("Swifty", "MacMenuBar");
         std::unique_ptr<QObject> menuBar(component.create());
         QVERIFY2(menuBar, qPrintable(component.errorString()));
         // file, edit, view, controls and window
@@ -1603,7 +845,7 @@ private slots:
         // step of its 72 clockwise of straight up
         const auto draw = [&](int waves) {
             QQmlComponent component(&rig.engine);
-            component.setData(QStringLiteral("import QtQuick\nimport Swiftify\n"
+            component.setData(QStringLiteral("import QtQuick\nimport Swifty\n"
                                              "SpectrumView { x: 20; y: 20; width: 400; height: 400; kind: SpectrumView.Ring; "
                                              "active: true; cutWaves: %1; cutRadius: 122; cutAmplitude: 0 }")
                                   .arg(waves).toUtf8(), QUrl());
@@ -1637,7 +879,7 @@ private slots:
         rig.engine.addImageProvider(QStringLiteral("art"), new RedArt);
         rig.window->setColor(Qt::transparent);
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "ArtworkImage { x: 10; y: 10; width: 60; height: 60; radius: 0; source: \"https://example.com/a.jpg\" }",
                           QUrl());
         std::unique_ptr<QObject> object(component.create());
@@ -1691,7 +933,7 @@ private slots:
     static std::unique_ptr<QObject> segmentedControl(Rig &rig, const QByteArray &extra)
     {
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Item { width: 400; height: 100\n"
                           "  property alias picker: picker\n"
                           "  SegmentedControl { id: picker; x: 20; y: 20; segmentWidth: 80; currentIndex: 1\n"
@@ -1802,7 +1044,7 @@ private slots:
         Song song;
         song.name = QStringLiteral("Spotlit");
         song.artists = QStringLiteral("Artist");
-        song.uri = QStringLiteral("spotify:track:spotlit");
+        song.uri = QStringLiteral("file:///music/spotlit.flac");
         song.artworkUrl = QUrl::fromLocalFile(path);
         rig.library.recentlyPlayed()->setSongs({song});
         Rig::settle();
@@ -1832,7 +1074,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Flickable { width: 300; height: 200; contentHeight: 800\n"
                           "  property alias fader: fader\n"
                           "  VerticalFader { id: fader; x: 100; y: 30; height: 132; onMoved: (next) => value = next } }",
@@ -1866,7 +1108,7 @@ private slots:
         Rig rig;
         rig.engine.addImageProvider(QStringLiteral("art"), new RedArt);
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem {\n"
+        component.setData("import QtQuick\nimport Swifty\nItem {\n"
                           "  id: root; width: 800; height: 600\n"
                           "  property alias card: card\n"
                           "  property bool claimedWhileUnarmed\n"
@@ -1875,7 +1117,7 @@ private slots:
                           "  function launch() { UiState.launchHero(card.cover, card.source, false) }\n"
                           "  function flyHome() { UiState.launchReturn(Qt.rect(40, 40, 232, 232), card.cover, card.source, false) }\n"
                           "  function open(): Item {\n"
-                          "    return Qt.createQmlObject('import Swiftify; CollectionHero { width: 800 }', root)\n"
+                          "    return Qt.createQmlObject('import Swifty; CollectionHero { width: 800 }', root)\n"
                           "  }\n"
                           "  Component.onCompleted: claimedWhileUnarmed = UiState.claimHero(card)\n"
                           "}", QUrl());
@@ -1885,7 +1127,7 @@ private slots:
         // nothing was clicked, so a hero has nothing to take
         QVERIFY(!object->property("claimedWhileUnarmed").toBool());
 
-        QObject *state = rig.engine.singletonInstance<QObject *>("Swiftify", "UiState");
+        QObject *state = rig.engine.singletonInstance<QObject *>("Swifty", "UiState");
         QVERIFY(state);
         auto *cover = object->property("card").value<QObject *>()->property("cover").value<QQuickItem *>();
         QVERIFY(cover);
@@ -1939,7 +1181,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem {\n"
+        component.setData("import QtQuick\nimport Swifty\nItem {\n"
                           "    property bool on: false\n"
                           "    property alias box: box\n"
                           "    Rectangle { id: box; width: 40; height: 40; Reveal.shown: parent.on }\n"
@@ -1981,7 +1223,7 @@ private slots:
         rig.settings.setReduceMotion(!performance);
         rig.settings.setPerformanceMode(performance);
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem {\n"
+        component.setData("import QtQuick\nimport Swifty\nItem {\n"
                           "    property bool on: false\n"
                           "    property alias box: box\n"
                           "    Rectangle { id: box; width: 40; height: 40; Reveal.shown: parent.on }\n"
@@ -2011,7 +1253,7 @@ private slots:
         Rig rig;
         rig.settings.setReduceMotion(true);
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem {\n"
+        component.setData("import QtQuick\nimport Swifty\nItem {\n"
                           "    readonly property real speed: UiState.spinSpeed\n"
                           "    Component.onCompleted: UiState.spinning = true\n"
                           "}\n",
@@ -2035,7 +1277,7 @@ private slots:
         rig.window->setColor(Qt::white);
         const auto draw = [&](const QString &shape, bool keeps) {
             QQmlComponent component(&rig.engine);
-            component.setData(QStringLiteral("import QtQuick\nimport Swiftify\nItem { width: 200; height: 200\n"
+            component.setData(QStringLiteral("import QtQuick\nimport Swifty\nItem { width: 200; height: 200\n"
                                              "MaterialShape { x: 20; y: 20; width: 160; height: 160; color: \"black\"; "
                                              "shape: \"%1\"; keepsShape: %2 } }")
                                   .arg(shape, keeps ? QStringLiteral("true") : QStringLiteral("false"))
@@ -2057,7 +1299,7 @@ private slots:
         QCOMPARE(kept, heart);
 
         QQmlComponent stickers(&rig.engine);
-        stickers.setData("import QtQuick\nimport Swiftify\nStickers { width: 400; height: 300; count: 4 }\n", QUrl());
+        stickers.setData("import QtQuick\nimport Swifty\nStickers { width: 400; height: 300; count: 4 }\n", QUrl());
         std::unique_ptr<QObject> scatter(stickers.create());
         QVERIFY2(scatter, qPrintable(stickers.errorString()));
         int shapes = 0;
@@ -2073,7 +1315,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem {\n"
+        component.setData("import QtQuick\nimport Swifty\nItem {\n"
                           "    width: 400; height: 400\n"
                           "    property alias pill: pill\n"
                           "    property alias clip: clip\n"
@@ -2108,7 +1350,7 @@ private slots:
         rig.window->setColor(Qt::white);
         const auto draw = [&](qreal amplitude) {
             QQmlComponent line(&rig.engine);
-            line.setData(QStringLiteral("import QtQuick\nimport Swiftify\nWavyLine { x: 20; y: 20; width: 200; "
+            line.setData(QStringLiteral("import QtQuick\nimport Swifty\nWavyLine { x: 20; y: 20; width: 200; "
                                         "color: \"black\"; thickness: 2; amplitude: %1 }")
                              .arg(amplitude)
                              .toUtf8(),
@@ -2135,7 +1377,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nDrift { active: true }\n", QUrl());
+        component.setData("import QtQuick\nimport Swifty\nDrift { active: true }\n", QUrl());
         std::unique_ptr<QObject> drift(component.create());
         QVERIFY2(drift, qPrintable(component.errorString()));
 
@@ -2167,7 +1409,7 @@ private slots:
         }
         rig.window->setColor(Qt::transparent);
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem { width: 300; height: 200\n"
+        component.setData("import QtQuick\nimport Swifty\nItem { width: 300; height: 200\n"
                           "    Rectangle { anchors.fill: parent; color: \"red\"\n"
                           "        layer.enabled: true\n"
                           "        layer.effect: ShaderEffect {\n"
@@ -2200,7 +1442,7 @@ private slots:
     void theShapeCatalogMatchesItsAtlas()
     {
         Rig rig;
-        QObject *shapes = rig.engine.singletonInstance<QObject *>("Swiftify", "Shapes");
+        QObject *shapes = rig.engine.singletonInstance<QObject *>("Swifty", "Shapes");
         QVERIFY(shapes);
         const QStringList names = shapes->property("names").toStringList();
         const QImage atlas(QStringLiteral(":/shapes/shape_atlas.png"));
@@ -2220,7 +1462,7 @@ private slots:
         // the shape's own unit square
         const auto draw = [&](const QString &shape, const QString &morphTo, qreal morph) {
             QQmlComponent component(&rig.engine);
-            component.setData(QStringLiteral("import QtQuick\nimport Swiftify\n"
+            component.setData(QStringLiteral("import QtQuick\nimport Swifty\n"
                                              "MaterialShape { x: 10; y: 10; width: 200; height: 200; color: \"white\"; "
                                              "shape: \"%1\"; morphTo: \"%2\"; morph: %3 }")
                                   .arg(shape, morphTo).arg(morph).toUtf8(), QUrl());
@@ -2273,7 +1515,7 @@ private slots:
         rig.window->setColor(Qt::transparent);
         const auto draw = [&](const QString &type) {
             QQmlComponent component(&rig.engine);
-            component.setData(QStringLiteral("import QtQuick\nimport QtQuick.Effects\nimport Swiftify\n"
+            component.setData(QStringLiteral("import QtQuick\nimport QtQuick.Effects\nimport Swifty\n"
                                              "%1 { x: 60; y: 60; width: 200; height: 200; %2 }")
                                   .arg(type, settings).toUtf8(), QUrl());
             std::unique_ptr<QObject> object(component.create());
@@ -2309,7 +1551,7 @@ private slots:
         }
         rig.window->setColor(Qt::transparent);
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "MaterialShape { x: 100; y: 100; width: 200; height: 200; color: \"white\"; "
                           "shape: \"square\"; spinAngle: 45 }",
                           QUrl());
@@ -2336,7 +1578,7 @@ private slots:
             QSKIP("no gpu to draw the button with");
         }
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Rectangle { width: 200; height: 200; color: \"white\"\n"
                           "    IconButton { x: 80; y: 80; colBackgroundHover: \"#e0e0e0\" } }",
                           QUrl());
@@ -2367,7 +1609,7 @@ private slots:
         Rig rig;
         rig.playSomething();
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "ListView { width: 800; height: 400; model: Player.upNext\n"
                           "    header: Item { width: 800; height: 40 }\n"
                           "    delegate: SongRow { width: 800; songs: Player.upNext } }",
@@ -2440,7 +1682,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Item { width: 1000; height: 700\n"
                           "    property alias menu: menu\n"
                           "    StyledMenu { id: menu\n"
@@ -2515,33 +1757,6 @@ private slots:
         QCOMPARE(texts(saved), QStringList {QStringLiteral("Mine")});
     }
 
-    void preampGainOffsetsVolumeAndResets()
-    {
-        Rig rig;
-        QCOMPARE(rig.sound.preampGain(), 0.0);
-        QCOMPARE(rig.core.preamp, 0.0f);
-        QVERIFY(rig.sound.isNeutral());
-
-        rig.sound.setPreampGain(4.5);
-        QCOMPARE(rig.sound.preampGain(), 4.5);
-        QCOMPARE(rig.core.preamp, 4.5f);
-        QVERIFY(!rig.sound.isNeutral());
-
-        rig.sound.reset();
-        QCOMPARE(rig.sound.preampGain(), 0.0);
-        QCOMPARE(rig.core.preamp, 0.0f);
-        QVERIFY(rig.sound.isNeutral());
-
-        const auto panel = rig.show(QStringLiteral("SoundPanel"));
-        QVERIFY(panel);
-        auto *slider = panel->findChild<QQuickItem *>(QStringLiteral("immersivePreampGainSlider"));
-        QVERIFY(slider);
-        slider->setProperty("value", 3.0);
-        QMetaObject::invokeMethod(slider, "moved");
-        QCOMPARE(rig.sound.preampGain(), 3.0);
-        QCOMPARE(rig.core.preamp, 3.0f);
-    }
-
     /// every way to a new playlist, a local one, a song's info or a deletion
     /// opens its dialog in the window itself
     void theWindowOpensItsEditors()
@@ -2549,12 +1764,12 @@ private slots:
         Rig rig;
         // the tray's menu is native, and the platform tests run on has none
         rig.settings.setTrayIcon(false);
-        QQmlComponent component(&rig.engine, QUrl(QStringLiteral("qrc:/qt/qml/Swiftify/qml/Main.qml")));
+        QQmlComponent component(&rig.engine, QUrl(QStringLiteral("qrc:/qt/qml/Swifty/qml/Main.qml")));
         std::unique_ptr<QObject> window(component.create());
         QVERIFY2(window, qPrintable(component.errorString()));
         Rig::settle();
         QQmlComponent asker(&rig.engine);
-        asker.setData("import QtQuick\nimport Swiftify\nQtObject {\n"
+        asker.setData("import QtQuick\nimport Swifty\nQtObject {\n"
                       "    function newPlaylist() { UiState.beginCreatePlaylist() }\n"
                       "    function newLocalPlaylist() { UiState.createLocalPlaylistRequested(null) }\n"
                       "    function editTrack(target: song) { UiState.editLocalTrackRequested(target) }\n"
@@ -2588,7 +1803,7 @@ private slots:
         Song song;
         song.name = QStringLiteral("Mine");
         song.uri = QStringLiteral("file:///music/mine.mp3");
-        QVERIFY(QMetaObject::invokeMethod(ask.get(), "editTrack", Q_ARG(swiftify::Song, song)));
+        QVERIFY(QMetaObject::invokeMethod(ask.get(), "editTrack", Q_ARG(swifty::Song, song)));
         QTRY_VERIFY(opened("LocalTrackEditor_QMLTYPE"));
         QMetaObject::invokeMethod(opened("LocalTrackEditor_QMLTYPE"), "close");
         QTRY_VERIFY(!opened("LocalTrackEditor_QMLTYPE"));
@@ -2641,80 +1856,12 @@ private slots:
         QVERIFY(shown->property("truncated").toBool());
     }
 
-    /// connecting for the first time: the setup stays through the library's
-    /// login until playback's is done too, and only then gives way
-    void theSetupWaitsForPlaybackToo()
-    {
-        Rig rig;
-        TokenServer tokens;
-        Browser browser;
-        OAuthFlow::setTokenEndpoint(tokens.url());
-        QDesktopServices::setUrlHandler(QStringLiteral("https"), &browser, "open");
-        const auto restore = qScopeGuard([] {
-            OAuthFlow::setTokenEndpoint(QUrl(QStringLiteral("https://accounts.spotify.com/api/token")));
-            QDesktopServices::unsetUrlHandler(QStringLiteral("https"));
-        });
-        // nothing to load from spotify itself here
-        rig.session.setInitialLibraryLoader({});
-        rig.session.restoreSavedSessions();
-        QTRY_VERIFY(!rig.session.isEvaluatingStoredLogin());
-
-        const auto host = rig.show(QStringLiteral("PageHost"));
-        QVERIFY(host);
-        const auto page = [&] {
-            const QQuickItem *current = host->property("currentPage").value<QQuickItem *>();
-            return current ? QString::fromLatin1(current->metaObject()->className()) : QString();
-        };
-        QTRY_VERIFY2(page().startsWith(QLatin1StringView("SetupView")), qPrintable(page()));
-
-        rig.session.setLibraryClientId(QStringLiteral("client"));
-        rig.session.beginLibraryLogin();
-        QTRY_COMPARE(browser.opened.size(), 1);
-        browser.approve();
-        QTRY_VERIFY(rig.session.isLibraryConnected());
-        // still setting up: playback is not
-        QTest::qWait(200);
-        QVERIFY2(page().startsWith(QLatin1StringView("SetupView")), qPrintable(page()));
-
-        rig.session.beginPlaybackLogin();
-        QTRY_COMPARE(browser.opened.size(), 2);
-        browser.approve();
-        std::shared_ptr<swiftify::testing::PendingCall> connect;
-        QTRY_VERIFY(std::any_of(rig.core.pending.cbegin(), rig.core.pending.cend(),
-                                [](const auto &call) { return call->name == QLatin1StringView("connect"); }));
-        rig.core.take(QStringLiteral("connect"))->succeed(QStringLiteral("login"));
-        QTRY_VERIFY(rig.session.isConnected());
-        // both: the library at last
-        QTRY_VERIFY2(!page().startsWith(QLatin1StringView("SetupView")), qPrintable(page()));
-    }
-
-    /// a launch that brings the library back while playback is still on its
-    /// way, or not coming, opens on the library, not the setup
-    void aLaunchWithTheLibraryShowsTheLibrary()
-    {
-        Rig rig;
-        rig.session.setInitialLibraryLoader({});
-        rig.credentials.items.insert(CredentialStore::Account::Library,
-                                     {QStringLiteral("client"), QStringLiteral("refresh"),
-                                      OAuthFlow::kLibraryAuthorizationVersion, {}, QStringLiteral("access"),
-                                      QDateTime::currentDateTimeUtc().addSecs(1800)});
-        rig.session.restoreSavedSessions();
-        QTRY_VERIFY(rig.session.isLibraryConnected());
-        QVERIFY(!rig.session.isConnected());
-        const auto host = rig.show(QStringLiteral("PageHost"));
-        QVERIFY(host);
-        const QQuickItem *current = host->property("currentPage").value<QQuickItem *>();
-        QVERIFY(current);
-        QVERIFY2(!QString::fromLatin1(current->metaObject()->className()).startsWith(QLatin1StringView("SetupView")),
-                 current->metaObject()->className());
-    }
-
     /// a menu is built the first time it opens, and opens then
     void aMenuOpensTheFirstTimeItIsAsked()
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Item { width: 400; height: 300\n"
                           "    property alias atAnchor: atAnchor\n"
                           "    property alias atPointer: atPointer\n"
@@ -2747,7 +1894,7 @@ private slots:
         Rig rig;
         rig.playSomething();
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Item { width: 800; height: 60\n"
                           "    property alias row: row\n"
                           "    property song playing\n"
@@ -2792,13 +1939,12 @@ private slots:
             QSKIP("counting frames needs the offscreen gpu rig");
         }
         rig.playSomething();
-        // counted from before the meter, which still draws as it goes away
-        int drawn = 0;
         const auto meter = rig.show(QStringLiteral("CompactMeter"));
         QVERIFY(meter);
         meter->setProperty("active", true);
         const QList<float> steady(48, 0.5f);
         rig.spectrum.publish(steady.constData(), 48);
+        int drawn = 0;
         QObject::connect(rig.control.get(), &QQuickRenderControl::sceneChanged, meter.get(), [&] { ++drawn; });
         const auto frames = [&](int count) {
             drawn = 0;
@@ -2823,7 +1969,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "SpectrumView { kind: SpectrumView.Ring; active: true; width: 400; height: 400 }",
                           QUrl());
         std::unique_ptr<QObject> object(component.create());
@@ -2891,7 +2037,7 @@ private slots:
         // a red circle far bigger than the 100 px card it sits in, over its
         // top left corner, as a genre card's shape is over its top right
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Item { x: 40; y: 40; width: 100; height: 100\n"
                           "  MaterialShape { x: -80; y: -80; width: 240; height: 240; shape: \"circle\"; color: \"red\";"
                           " parentClipRadius: 24 } }",
@@ -2922,7 +2068,7 @@ private slots:
         // a page filling a rounded sheet edge to edge, as a sticker does
         // at the sheet's corner, capped in blue
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Item { x: 40; y: 40; width: 200; height: 120\n"
                           "  Rectangle { anchors.fill: parent; color: \"red\" }\n"
                           "  CornerCaps { anchors.fill: parent; radius: 24; color: \"blue\" } }",
@@ -2968,7 +2114,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem { width: 600; height: 300\n"
+        component.setData("import QtQuick\nimport Swifty\nItem { width: 600; height: 300\n"
                           "  property alias first: first; property alias again: again; property alias other: other\n"
                           "  Stickers { id: first; anchors.fill: parent; key: \"home\" }\n"
                           "  Stickers { id: again; anchors.fill: parent; key: \"home\" }\n"
@@ -2997,7 +2143,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nShapeBurst { x: 100; y: 100; kind: \"hearts\" }", QUrl());
+        component.setData("import QtQuick\nimport Swifty\nShapeBurst { x: 100; y: 100; kind: \"hearts\" }", QUrl());
         QPointer<QQuickItem> burst(qobject_cast<QQuickItem *>(component.create()));
         QVERIFY2(burst, qPrintable(component.errorString()));
         // as the window's host makes them, from qml, so it may destroy itself
@@ -3016,7 +2162,7 @@ private slots:
     void viewsHoldStillAtRest_data()
     {
         QTest::addColumn<QString>("type");
-        for (const char *type : {"HomeView", "SearchView", "PlaylistsView", "SavedSongsView", "LocalFilesView", "LocalTracksView", "StatsView", "Sidebar",
+        for (const char *type : {"HomeView", "SearchView", "PlaylistsView", "SavedSongsView", "AlbumsView", "ArtistsView", "AllSongsView", "Sidebar",
                                  "PlayerBar", "SettingsPages", "EmptyState", "Stickers", "ShapeIcon"}) {
             QTest::addRow("%s", type) << QString::fromLatin1(type);
         }
@@ -3133,7 +2279,7 @@ private slots:
             Song song;
             song.instanceId = quint64(100 + index);
             song.name = QStringLiteral("Song %1").arg(index);
-            song.uri = QStringLiteral("spotify:track:s%1").arg(index);
+            song.uri = QStringLiteral("file:///music/s%1.flac").arg(index);
             songs.append(song);
             Artist artist;
             artist.id = QStringLiteral("a%1").arg(index);
@@ -3200,7 +2346,7 @@ private slots:
         QVERIFY2(countCards() < 40, qPrintable(QString::number(countCards())));
     }
 
-    void aPlaylistMadeHereShowsWithTheLocalFiles()
+    void aPlaylistMadeHereShowsWithThePlaylists()
     {
         Rig rig;
         const Playlist made = rig.localFiles.createPlaylist(QStringLiteral("Mine"), {}, {}, {});
@@ -3221,10 +2367,10 @@ private slots:
             return QString::fromLatin1(item->metaObject()->className()).startsWith(QLatin1StringView(type));
         };
 
-        // Local Files is a grid: a new playlist's tile, every file's card,
-        // then the playlists
+        // the playlists are a grid: a new playlist's tile, the favourites, then
+        // the playlists
         {
-            const auto page = rig.show(QStringLiteral("LocalFilesView"));
+            const auto page = rig.show(QStringLiteral("PlaylistsView"));
             QVERIFY(page);
             const auto card = [&](const QString &title) {
                 return find(page.get(), [&](QQuickItem *item) {
@@ -3233,10 +2379,10 @@ private slots:
                 });
             };
             QTRY_VERIFY(card(QStringLiteral("Mine")));
-            QVERIFY(card(QStringLiteral("Local Tracks")));
             QVERIFY(find(page.get(), [&](QQuickItem *item) {
                 return item->property("text").toString() == QStringLiteral("New Playlist") && item->isVisible();
             }));
+            QTRY_VERIFY(card(QStringLiteral("Favourite Songs")));
             QCOMPARE(page->property("count").toInt(), 3);
         }
 
@@ -3257,7 +2403,7 @@ private slots:
 
         // and its editor has no public switch
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\nItem {\n"
+        component.setData("import QtQuick\nimport Swifty\nItem {\n"
                           "    property alias editor: editor\n"
                           "    PlaylistEditor { id: editor }\n"
                           "}\n",
@@ -3288,7 +2434,7 @@ private slots:
         Rig rig;
         rig.settings.setTrayIcon(false);
         rig.settings.setPerformanceMode(true);
-        QQmlComponent component(&rig.engine, QUrl(QStringLiteral("qrc:/qt/qml/Swiftify/qml/Main.qml")));
+        QQmlComponent component(&rig.engine, QUrl(QStringLiteral("qrc:/qt/qml/Swifty/qml/Main.qml")));
         std::unique_ptr<QObject> object(component.create());
         QVERIFY2(object, qPrintable(component.errorString()));
         auto *window = qobject_cast<QQuickWindow *>(object.get());
@@ -3319,7 +2465,7 @@ private slots:
     {
         Rig rig;
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "SectionHeader { title: 'Pinned Playlists'; symbol: 'push_pin'; showsSeeAll: true }", QUrl());
         std::unique_ptr<QObject> object(component.create());
         QVERIFY2(object, qPrintable(component.errorString()));
@@ -3367,7 +2513,7 @@ private slots:
         const Playlist playlist = rig.localFiles.createPlaylist(QStringLiteral("Mine"), {}, {}, {});
         rig.library.selectPlaylist(playlist);
         QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
+        component.setData("import QtQuick\nimport Swifty\n"
                           "Item { width: 355; height: 160\n"
                           "Window { id: host; visible: false }\n"
                           "Rectangle { id: page; anchors.fill: parent; color: 'green' }\n"
@@ -3422,289 +2568,14 @@ private slots:
         }
     }
 
-    void windowControlsOnRightMovesControlsAndInspector()
-    {
-        Rig rig;
-        rig.settings.setTrayIcon(false);
-        rig.settings.setPerformanceMode(true);
-        rig.settings.setShowWindowControls(true);
-        rig.settings.setWindowControlsOnRight(false);
-        QQmlComponent component(&rig.engine, QUrl(QStringLiteral("qrc:/qt/qml/Swiftify/qml/Main.qml")));
-        std::unique_ptr<QObject> object(component.create());
-        QVERIFY2(object, qPrintable(component.errorString()));
-        auto *window = qobject_cast<QQuickWindow *>(object.get());
-        QVERIFY(window);
-        window->setWidth(1280);
-        auto *controls = window->findChild<QQuickItem *>(QStringLiteral("appWindowControls"));
-        auto *inspector = window->findChild<QQuickItem *>(QStringLiteral("mainInspector"));
-        auto *close = window->findChild<QQuickItem *>(QStringLiteral("closeWindowButton"));
-        auto *minimize = window->findChild<QQuickItem *>(QStringLiteral("minimizeWindowButton"));
-        QVERIFY(controls && inspector && close && minimize);
-        Rig::settle();
-
-        // Default: controls on left
-        QCOMPARE(controls->x(), 12.0);
-        QCOMPARE(inspector->property("y").toReal(), 8.0);
-        QVERIFY(close->x() < minimize->x());
-
-        // Toggle window controls to right
-        rig.settings.setWindowControlsOnRight(true);
-        Rig::settle();
-
-        if (rig.app.isMacOS()) {
-            // macOS uses native traffic lights, not the in-app controls.
-            // Moving hidden controls must not move the inspector.
-            QCOMPARE(inspector->property("y").toReal(), 8.0);
-            QVERIFY(!controls->isVisible());
-            return;
-        }
-
-        // Controls on right: x is window width - controls width - 12
-        QCOMPARE(controls->x(), window->width() - controls->width() - 12.0);
-        // Inspector moved down by 36: top margin 44 (8 + 36)
-        QCOMPARE(inspector->property("y").toReal(), 44.0);
-        // RightToLeft layout: minimize is on the left, close is on the right
-        QVERIFY(minimize->x() < close->x());
-
-        // Hide window controls
-        rig.settings.setShowWindowControls(false);
-        Rig::settle();
-        QVERIFY(!controls->isVisible());
-        // Inspector returns to top margin 8
-        QCOMPARE(inspector->property("y").toReal(), 8.0);
-
-        // Verify SettingsPages Appearance toggle grays out when window deco is off
-        QQmlComponent settingsComponent(&rig.engine, QUrl(QStringLiteral("qrc:/qt/qml/Swiftify/qml/settings/SettingsPages.qml")));
-        std::unique_ptr<QObject> settingsObject(settingsComponent.create());
-        QVERIFY2(settingsObject, qPrintable(settingsComponent.errorString()));
-        settingsObject->setProperty("page", 4);
-        Rig::settle();
-        auto *switchItem = settingsObject->findChild<QQuickItem *>(QStringLiteral("windowControlsOnRightSwitch"));
-        QVERIFY(switchItem);
-
-        // showWindowControls is currently false -> switch is disabled and grayed out
-        QCOMPARE(switchItem->isEnabled(), false);
-        QVERIFY(switchItem->opacity() < 0.5);
-
-        // When showWindowControls is true -> switch is enabled
-        rig.settings.setShowWindowControls(true);
-        Rig::settle();
-        QCOMPARE(switchItem->isEnabled(), true);
-        QCOMPARE(switchItem->opacity(), 1.0);
-    }
-
-    void clickingSelectedSortOptionReversesOrder()
-    {
-        Rig rig;
-        Song song1;
-        song1.name = QStringLiteral("Zebra");
-        song1.artists = QStringLiteral("Artist B");
-        song1.albumName = QStringLiteral("Album C");
-        song1.durationMs = 120000;
-        song1.uri = QStringLiteral("file:///song1.flac");
-
-        Song song2;
-        song2.name = QStringLiteral("Apple");
-        song2.artists = QStringLiteral("Artist A");
-        song2.albumName = QStringLiteral("Album B");
-        song2.durationMs = 240000;
-        song2.uri = QStringLiteral("file:///song2.flac");
-
-        Song song3;
-        song3.name = QStringLiteral("Mango");
-        song3.artists = QStringLiteral("Artist C");
-        song3.albumName = QStringLiteral("Album A");
-        song3.durationMs = 180000;
-        song3.uri = QStringLiteral("file:///song3.flac");
-
-        const Playlist playlist = rig.localFiles.createPlaylist(QStringLiteral("Test Playlist"), {}, {}, {song1, song2, song3});
-        rig.library.selectPlaylist(playlist);
-        rig.library.setPlaylistSongsForTesting({song1, song2, song3});
-
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Playlist);
-        QCOMPARE(rig.library.playlistSortReversed(), false);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->count(), 3);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(0).name, QStringLiteral("Zebra"));
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(1).name, QStringLiteral("Apple"));
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(2).name, QStringLiteral("Mango"));
-        QVERIFY(rig.library.canReorderPlaylist());
-
-        // Reverse playlist order
-        rig.library.togglePlaylistSortOrder(LibraryStore::SortOrder::Playlist);
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Playlist);
-        QCOMPARE(rig.library.playlistSortReversed(), true);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(0).name, QStringLiteral("Mango"));
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(1).name, QStringLiteral("Apple"));
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(2).name, QStringLiteral("Zebra"));
-        QVERIFY(!rig.library.canReorderPlaylist());
-
-        // Toggle back to forward playlist order
-        rig.library.togglePlaylistSortOrder(LibraryStore::SortOrder::Playlist);
-        QCOMPARE(rig.library.playlistSortReversed(), false);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(0).name, QStringLiteral("Zebra"));
-        QVERIFY(rig.library.canReorderPlaylist());
-
-        // Sort by Title (first click: ascending, reversed is false)
-        rig.library.togglePlaylistSortOrder(LibraryStore::SortOrder::Title);
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Title);
-        QCOMPARE(rig.library.playlistSortReversed(), false);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(0).name, QStringLiteral("Apple"));
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(1).name, QStringLiteral("Mango"));
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(2).name, QStringLiteral("Zebra"));
-
-        // Sort by Title again (second click: descending, reversed is true)
-        rig.library.togglePlaylistSortOrder(LibraryStore::SortOrder::Title);
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Title);
-        QCOMPARE(rig.library.playlistSortReversed(), true);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(0).name, QStringLiteral("Zebra"));
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(1).name, QStringLiteral("Mango"));
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(2).name, QStringLiteral("Apple"));
-
-        // Switch to Duration (first click: ascending, reversed resets to false)
-        rig.library.togglePlaylistSortOrder(LibraryStore::SortOrder::Duration);
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Duration);
-        QCOMPARE(rig.library.playlistSortReversed(), false);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(0).durationMs, 120000);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(1).durationMs, 180000);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(2).durationMs, 240000);
-
-        // Click Duration again (reverses to descending)
-        rig.library.togglePlaylistSortOrder(LibraryStore::SortOrder::Duration);
-        QCOMPARE(rig.library.playlistSortReversed(), true);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(0).durationMs, 240000);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(1).durationMs, 180000);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->at(2).durationMs, 120000);
-
-        // Selecting a playlist resets sort to Playlist order and reversed to false
-        rig.library.selectPlaylist(playlist);
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Playlist);
-        QCOMPARE(rig.library.playlistSortReversed(), false);
-    }
-
-    void topBarSortMenuTogglesReverseAndArrow()
-    {
-        Rig rig;
-        const Playlist playlist = rig.localFiles.createPlaylist(QStringLiteral("Mine"), {}, {}, {});
-        rig.library.selectPlaylist(playlist);
-        QQmlComponent component(&rig.engine);
-        component.setData("import QtQuick\nimport Swiftify\n"
-                          "Item { width: 1280; height: 160\n"
-                          "Window { id: host; visible: false }\n"
-                          "Rectangle { id: page; anchors.fill: parent }\n"
-                          "TopBar { id: bar; objectName: 'bar'; width: parent.width; window: host; backdropSource: page } }", QUrl());
-        std::unique_ptr<QObject> object(component.create());
-        QVERIFY2(object, qPrintable(component.errorString()));
-        auto *holder = qobject_cast<QQuickItem *>(object.get());
-        holder->setParentItem(rig.window->contentItem());
-        Rig::settle();
-        rig.render();
-
-        auto *sortButton = holder->findChild<QQuickItem *>(QStringLiteral("sortButton"));
-        QVERIFY(sortButton);
-        auto *sortMenuLoader = holder->findChild<QObject *>(QStringLiteral("sortMenu"));
-        QVERIFY(sortMenuLoader);
-        QVERIFY(QMetaObject::invokeMethod(sortMenuLoader, "popupAt", Q_ARG(QQuickItem *, sortButton), Q_ARG(qreal, 0), Q_ARG(qreal, sortButton->height())));
-        Rig::settle();
-        rig.render();
-
-        auto *menu = sortMenuLoader->property("item").value<QObject *>();
-        QVERIFY(menu);
-
-        QQuickItem *titleItem = nullptr;
-        const int count = menu->property("count").toInt();
-        for (int i = 0; i < count; ++i) {
-            QQuickItem *item = nullptr;
-            QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
-            if (item && item->property("text").toString() == QStringLiteral("Title")) {
-                titleItem = item;
-                break;
-            }
-        }
-        QVERIFY(titleItem);
-        QCOMPARE(titleItem->property("checked").toBool(), false);
-        QCOMPARE(titleItem->property("trailingSymbol").toString(), QString());
-
-        // First click: selects Title (ascending)
-        QVERIFY(QMetaObject::invokeMethod(titleItem, "triggered") || QMetaObject::invokeMethod(titleItem, "trigger"));
-        Rig::settle();
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Title);
-        QCOMPARE(rig.library.playlistSortReversed(), false);
-        QCOMPARE(titleItem->property("checked").toBool(), true);
-        QCOMPARE(titleItem->property("trailingSymbol").toString(), QStringLiteral("arrow_upward"));
-
-        // Second click: reverses order (descending)
-        QVERIFY(QMetaObject::invokeMethod(titleItem, "triggered") || QMetaObject::invokeMethod(titleItem, "trigger"));
-        Rig::settle();
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Title);
-        QCOMPARE(rig.library.playlistSortReversed(), true);
-        QCOMPARE(titleItem->property("checked").toBool(), true);
-        QCOMPARE(titleItem->property("trailingSymbol").toString(), QStringLiteral("arrow_downward"));
-
-        // Third click: toggles back to ascending
-        QVERIFY(QMetaObject::invokeMethod(titleItem, "triggered") || QMetaObject::invokeMethod(titleItem, "trigger"));
-        Rig::settle();
-        QCOMPARE(rig.library.playlistSortOrder(), LibraryStore::SortOrder::Title);
-        QCOMPARE(rig.library.playlistSortReversed(), false);
-        QCOMPARE(titleItem->property("checked").toBool(), true);
-        QCOMPARE(titleItem->property("trailingSymbol").toString(), QStringLiteral("arrow_upward"));
-    }
-
-    void playlistPlayButtonPlaysReversedOrder()
-    {
-        Rig rig;
-        Song song1;
-        song1.name = QStringLiteral("Zebra");
-        song1.artists = QStringLiteral("Artist B");
-        song1.albumName = QStringLiteral("Album C");
-        song1.durationMs = 120000;
-        song1.uri = QStringLiteral("file:///music/song1.flac");
-
-        Song song2;
-        song2.name = QStringLiteral("Apple");
-        song2.artists = QStringLiteral("Artist A");
-        song2.albumName = QStringLiteral("Album B");
-        song2.durationMs = 240000;
-        song2.uri = QStringLiteral("file:///music/song2.flac");
-
-        Playlist playlist;
-        playlist.id = QStringLiteral("test_playlist_1");
-        playlist.name = QStringLiteral("Reversed Playlist");
-        playlist.songCount = 2;
-
-        rig.library.selectPlaylist(playlist);
-        rig.library.setPlaylistSongsForTesting({song1, song2});
-
-        // Reverse the playlist order
-        rig.library.togglePlaylistSortOrder(LibraryStore::SortOrder::Playlist);
-        QCOMPARE(rig.library.playlistSortReversed(), true);
-        QCOMPARE(rig.library.displayedPlaylistSongs()->count(), 2);
-
-        const auto page = rig.show(QStringLiteral("PlaylistView"));
-        QVERIFY(page);
-
-        auto *playButton = page->findChild<QQuickItem *>(QStringLiteral("playButton"));
-        QVERIFY(playButton);
-        QCOMPARE(playButton->isEnabled(), true);
-
-        QVERIFY(QMetaObject::invokeMethod(playButton, "clicked"));
-        Rig::settle();
-
-        // Queue should match the reversed displayed order: song2 (Apple), then song1 (Zebra)
-        const auto &queue = rig.player.activeQueue();
-        QCOMPARE(queue.size(), 2);
-        QCOMPARE(queue.at(0).name, QStringLiteral("Apple"));
-        QCOMPARE(queue.at(1).name, QStringLiteral("Zebra"));
-        QCOMPARE(rig.player.currentSong().name, QStringLiteral("Apple"));
-    }
-
     void views_data()
     {
         QTest::addColumn<QString>("type");
         for (const char *type : {"SoundPanel", "SleepTimerPanel", "ImmersiveQueue", "ImmersiveLyrics", "SegmentedControl",
                                  "StyledSwitch", "RollingText", "PlayerBar", "LyricsPanel", "QueuePanel", "Sidebar",
-                                 "PageHost", "HomeView", "SearchView", "ArtistView", "AlbumView", "PlaylistView", "PlaylistsView", "SavedSongsView", "LocalFilesView", "LocalTracksView", "StatsView", "StartupView",
-                                 "SetupView", "CompactMeter", "MaterialShape", "ShapeIcon", "SquiggleRing", "WavyLine",
-                                 "LoadingSpinner", "ShapeButton", "WavyPill", "ToolbarButton", "PlayButton", "ScrollingText"}) {
+                                 "PageHost", "HomeView", "SearchView", "ArtistView", "AlbumView", "PlaylistView", "PlaylistsView", "SavedSongsView", "AlbumsView", "AllSongsView",
+                                 "CompactMeter", "MaterialShape", "ShapeIcon", "SquiggleRing", "WavyLine",
+                                 "LoadingSpinner", "ShapeButton", "WavyPill", "ToolbarButton", "PlayButton"}) {
             QTest::newRow(type) << QString::fromLatin1(type);
         }
     }
@@ -3715,41 +2586,6 @@ private slots:
         Rig rig;
         rig.playSomething();
         QVERIFY(rig.show(type));
-    }
-
-    // the stats page with plays to show draws every part of itself: the
-    // figures, the top lists, the charts and the calendar
-    void theStatsPageDrawsLocalPlays()
-    {
-        Rig rig;
-        for (int index = 0; index < 12; ++index) {
-            Song song;
-            song.uri = QStringLiteral("spotify:track:stats%1").arg(index % 4);
-            song.name = QStringLiteral("Song %1").arg(index % 4);
-            song.artists = QStringLiteral("Artist %1").arg(index % 2);
-            song.albumName = QStringLiteral("Album");
-            song.albumId = QStringLiteral("album%1").arg(index % 2);
-            song.durationMs = 180'000;
-            Artist artist;
-            artist.id = QStringLiteral("artist%1").arg(index % 2);
-            artist.name = song.artists;
-            song.artistItems = {artist};
-            QVERIFY(rig.listeningHistory.record(song, QDateTime::currentDateTimeUtc().addDays(-index).addSecs(-3600 * index), 120'000));
-        }
-        QTRY_COMPARE(rig.stats.plays(), 12);
-        const auto view = rig.show(QStringLiteral("StatsView"));
-        QVERIFY(view);
-        QCOMPARE(rig.stats.topTracks()->count(), 4);
-        QCOMPARE(rig.stats.topArtists()->count(), 2);
-        QVERIFY(rig.stats.calendarTotal() >= 12);
-        // the latest play leads the recent ones, though it was kept first
-        QCOMPARE(rig.stats.recent()->nameAt(0), QStringLiteral("Song 0"));
-        rig.stats.setRankByTime(true);
-        rig.stats.setPeriod(0);
-        Rig::settle();
-        rig.stats.setPeriod(3);
-        Rig::settle();
-        QCOMPARE(rig.stats.plays(), 12);
     }
 };
 

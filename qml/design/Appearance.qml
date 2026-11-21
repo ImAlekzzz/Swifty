@@ -19,7 +19,7 @@
 pragma Singleton
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // design tokens, after end4's Appearance.qml: rounding, type, motion curves and
 // sizes. colours live in Theme (C++), which follows the system scheme.

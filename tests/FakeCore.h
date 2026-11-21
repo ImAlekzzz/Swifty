@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,9 +20,9 @@
 #pragma once
 
 #include "core/PlaybackCore.h"
-#include "spotify/SpotifyError.h"
+#include "core/PlaybackError.h"
 
-#include <swiftify_core.h>
+#include <swifty_core.h>
 
 #include <QCoroSignal>
 #include <QElapsedTimer>
@@ -34,7 +35,7 @@
 #include <memory>
 #include <utility>
 
-namespace swiftify::testing {
+namespace swifty::testing {
 
 /// an async call the test decides the outcome of
 class PendingCall : public QObject {
@@ -74,7 +75,6 @@ public:
     quint32 position = 0;
     quint32 duration = 0;
     float volumeValue = 0.75f;
-    float preamp = 0.0f;
     bool spectrumEnabled = false;
     /// levels that move as music's would, for measuring what moving bars
     /// cost; still by default
@@ -94,39 +94,6 @@ public:
         return nullptr;
     }
 
-    /// both complete with what the test settles them with, as the login
-    QCoro::Task<QString> connectSession(QString accessToken, QString) override
-    {
-        co_return co_await await(QStringLiteral("connect"), accessToken);
-    }
-    QCoro::Task<QString> connectStoredSession(QString login, QString) override
-    {
-        co_return co_await await(QStringLiteral("connectStored"), login);
-    }
-    void disconnectSession() override { log << QStringLiteral("disconnect"); }
-    void reset() override
-    {
-        ++coreGeneration;
-        const auto calls = std::exchange(pending, {});
-        for (const auto &call : calls) {
-            call->cancel();
-        }
-        sounding = false;
-    }
-    quint64 generation() const override { return coreGeneration; }
-
-    QCoro::Task<> playTrack(QString uri) override
-    {
-        co_await await(QStringLiteral("playTrack"), uri);
-        // librespot starts the track once loaded, whoever still wants it
-        sounding = true;
-    }
-    void preloadTrack(const QString &, bool) override {}
-    QCoro::Task<> crossfadeTrack(QString uri, quint32) override
-    {
-        co_await await(QStringLiteral("crossfadeTrack"), uri);
-        sounding = true;
-    }
     QCoro::Task<> playFile(QString path) override
     {
         co_await await(QStringLiteral("playFile"), path);
@@ -137,9 +104,6 @@ public:
         co_await await(QStringLiteral("restartAudioOutput"), {});
         stalled = false;
     }
-    QCoro::Task<QString> lyricsJson(QString uri) override { co_return co_await await(QStringLiteral("lyrics"), uri); }
-    QCoro::Task<QString> playlistJson(QString uri) override { co_return co_await await(QStringLiteral("playlist"), uri); }
-    QCoro::Task<QString> artistTopTracksJson(QString uri) override { co_return co_await await(QStringLiteral("topTracks"), uri); }
 
     void play() override
     {
@@ -158,30 +122,15 @@ public:
     }
     void setVolume(float volume) override { volumeValue = volume; }
     float volume() const override { return volumeValue; }
-    void setStreamQuality(int) override {}
-    void setVolumeNormalization(bool) override {}
-    void setAudioCache(const QString &, qint64) override {}
     void setPlaybackShaping(float, float, bool) override {}
-    void setPreampGain(float gain) override { preamp = gain; }
     void setEqualizer(const QList<float> &) override {}
 
-    bool sessionIsValid() const override { return sessionValid; }
     bool audioOutputStalled() const override { return stalled; }
     quint32 playbackPositionMs() const override { return position; }
     quint32 playbackDurationMs() const override { return duration; }
     bool takeEndOfTrack() override { return std::exchange(endOfTrack, false); }
 
     void setSpectrumEnabled(bool enabled) override { spectrumEnabled = enabled; }
-    /// something else started what plays, and takes the skips
-    bool remote = false;
-    bool skipRemote(bool forward) override
-    {
-        if (remote) {
-            log << (forward ? QStringLiteral("skip next") : QStringLiteral("skip previous"));
-        }
-        return remote;
-    }
-
     int spectrumLevels(float *out, int capacity) const override
     {
         std::fill(out, out + capacity, 0.0f);
@@ -211,13 +160,12 @@ private:
         }
         if (!ok) {
             // as RustCore tells a replaced request from a failed one
-            throw SpotifyError(payload == QLatin1StringView(SWIFTIFY_CORE_SUPERSEDED)     ? SpotifyError::Kind::Superseded
-                               : payload == QLatin1StringView(SWIFTIFY_CORE_UNAVAILABLE) ? SpotifyError::Kind::Unavailable
-                                                                                          : SpotifyError::Kind::Core,
+            throw PlaybackError(payload == QLatin1StringView(SWIFTY_CORE_SUPERSEDED) ? PlaybackError::Kind::Superseded
+                                                                                     : PlaybackError::Kind::Core,
                                payload);
         }
         co_return payload;
     }
 };
 
-} // namespace swiftify::testing
+} // namespace swifty::testing

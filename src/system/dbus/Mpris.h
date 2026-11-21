@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,11 +25,11 @@
 #include <QObject>
 #include <QVariantMap>
 
-namespace swiftify {
+namespace swifty {
 
 class PlaybackController;
 
-/// the player on the session bus as org.mpris.MediaPlayer2.swiftify, so media
+/// the player on the session bus as org.mpris.MediaPlayer2.swifty, so media
 /// keys, playerctl and shell media widgets (end4's included) can see and drive
 /// it. the job SystemMediaSession.swift does with MPNowPlayingInfoCenter.
 class Mpris : public QObject {
@@ -61,7 +62,6 @@ signals:
 
 private:
     void update();
-    void checkForJump();
     void emitPropertiesChanged(const QString &interface, const QVariantMap &changed);
 
     PlaybackController *m_player;
@@ -100,8 +100,8 @@ public:
     bool canQuit() const { return true; }
     bool canRaise() const { return true; }
     bool hasTrackList() const { return false; }
-    QString identity() const { return QStringLiteral("Swiftify"); }
-    QString desktopEntry() const { return QStringLiteral("swiftify"); }
+    QString identity() const { return QStringLiteral("Swifty"); }
+    QString desktopEntry() const { return QStringLiteral("swifty"); }
     QStringList supportedUriSchemes() const { return {}; }
     QStringList supportedMimeTypes() const { return {}; }
 
@@ -171,4 +171,4 @@ private:
     Mpris *m_mpris;
 };
 
-} // namespace swiftify
+} // namespace swifty

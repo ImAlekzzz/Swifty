@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +31,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
@@ -195,8 +196,7 @@ void PlayerStyle::retarget(Target target)
     m_from = {m_palette, m_weights, m_scheme->roles(), m_darkScheme->roles()};
     m_to = std::move(target);
     m_transition.stop();
-    // during a crossfade the colours change with the sound
-    m_transition.setDuration(std::max(600, m_player->crossfadeRemainingMs()));
+    m_transition.setDuration(600);
     m_transition.start();
 }
 
@@ -216,4 +216,4 @@ void PlayerStyle::step(qreal progress)
     emit paletteChanged();
 }
 
-} // namespace swiftify
+} // namespace swifty

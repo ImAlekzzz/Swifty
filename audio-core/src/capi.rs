@@ -1,5 +1,5 @@
 //! a plain c abi over `AudioCore` for the qt front end. the header is
-//! `include/swiftify_core.h`.
+//! `include/swifty_core.h`.
 //!
 //! swift-bridge ran the async calls on a runtime of its own. here the core owns
 //! one, and an async call returns at once: its result is queued as a completion
@@ -8,7 +8,7 @@
 //! c++ from a tokio worker.
 //!
 //! strings crossing the boundary are nul-terminated utf-8. any string this file
-//! hands out is owned by the caller and released with `swiftify_string_free`.
+//! hands out is owned by the caller and released with `swifty_string_free`.
 //! a null error string means success.
 
 #[cfg(unix)]
@@ -37,7 +37,7 @@ fn runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| {
         Builder::new_multi_thread()
             .worker_threads(RUNTIME_WORKER_THREADS)
-            .thread_name("swiftify-core")
+            .thread_name("swifty-core")
             .enable_all()
             .build()
             .expect("failed to start the audio core runtime")
@@ -51,7 +51,7 @@ struct Completion {
 }
 
 /// what the front end asked to be called with when a completion is queued,
-/// from whichever thread queued it (`swiftify_core_set_completion_callback`)
+/// from whichever thread queued it (`swifty_core_set_completion_callback`)
 struct Waker {
     callback: extern "C" fn(*mut c_void),
     context: *mut c_void,
@@ -125,12 +125,12 @@ impl CompletionQueue {
 }
 
 /// the handle the front end holds.
-pub struct SwiftifyCore {
+pub struct SwiftyCore {
     core: Arc<AudioCore>,
     completions: Arc<CompletionQueue>,
 }
 
-impl SwiftifyCore {
+impl SwiftyCore {
     fn spawn<F, T>(&self, request_id: u64, operation: impl FnOnce(Arc<AudioCore>) -> F)
     where
         F: Future<Output = Result<T, String>> + Send + 'static,
@@ -185,8 +185,8 @@ unsafe fn read_str(value: *const c_char) -> Result<String, String> {
 }
 
 /// # Safety
-/// `handle` is null or a live pointer from `swiftify_core_new`.
-unsafe fn handle<'a>(handle: *const SwiftifyCore) -> Option<&'a SwiftifyCore> {
+/// `handle` is null or a live pointer from `swifty_core_new`.
+unsafe fn handle<'a>(handle: *const SwiftyCore) -> Option<&'a SwiftyCore> {
     // SAFETY: the caller guarantees the pointer is null or live.
     unsafe { handle.as_ref() }
 }
@@ -195,37 +195,37 @@ const MISSING_CORE: &str = "the audio core is not available";
 
 /// a new core, or null if its completion socket could not be created.
 #[unsafe(no_mangle)]
-pub extern "C" fn swiftify_core_new() -> *mut SwiftifyCore {
+pub extern "C" fn swifty_core_new() -> *mut SwiftyCore {
     let Ok(completions) = CompletionQueue::new() else {
         return ptr::null_mut();
     };
-    Box::into_raw(Box::new(SwiftifyCore {
+    Box::into_raw(Box::new(SwiftyCore {
         core: Arc::new(AudioCore::new()),
         completions: Arc::new(completions),
     }))
 }
 
 /// # Safety
-/// `core` is null or a pointer from `swiftify_core_new` that is not used again.
+/// `core` is null or a pointer from `swifty_core_new` that is not used again.
 /// calls still running finish in the background and their results are dropped.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_core_free(core: *mut SwiftifyCore) {
+pub unsafe extern "C" fn swifty_core_free(core: *mut SwiftyCore) {
     if core.is_null() {
         return;
     }
-    // SAFETY: the caller hands back ownership of a pointer from `swiftify_core_new`.
+    // SAFETY: the caller hands back ownership of a pointer from `swifty_core_new`.
     let core = unsafe { Box::from_raw(core) };
     core.core.stop();
 }
 
 /// the descriptor that becomes readable when a completion is waiting. the
-/// caller drains it and then calls `swiftify_core_take_completion` until it
-/// returns false. it stays open until `swiftify_core_free`.
+/// caller drains it and then calls `swifty_core_take_completion` until it
+/// returns false. it stays open until `swifty_core_free`.
 ///
 /// # Safety
 /// `core` is null or live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_core_completion_fd(core: *const SwiftifyCore) -> c_int {
+pub unsafe extern "C" fn swifty_core_completion_fd(core: *const SwiftyCore) -> c_int {
     #[cfg(unix)]
     {
         // SAFETY: forwarded from the caller.
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn swiftify_core_completion_fd(core: *const SwiftifyCore) 
             .map(|core| core.completions.receiver.as_raw_fd())
             .unwrap_or(-1)
     }
-    // no descriptor to poll here: swiftify_core_set_completion_callback
+    // no descriptor to poll here: swifty_core_set_completion_callback
     #[cfg(not(unix))]
     {
         let _ = core;
@@ -249,8 +249,8 @@ pub unsafe extern "C" fn swiftify_core_completion_fd(core: *const SwiftifyCore) 
 /// `core` is null or live; `context` stays valid until the callback is taken
 /// back or `core` is freed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_core_set_completion_callback(
-    core: *const SwiftifyCore,
+pub unsafe extern "C" fn swifty_core_set_completion_callback(
+    core: *const SwiftyCore,
     callback: Option<extern "C" fn(*mut c_void)>,
     context: *mut c_void,
 ) {
@@ -265,13 +265,13 @@ pub unsafe extern "C" fn swiftify_core_set_completion_callback(
 
 /// takes the oldest finished async call. `payload` receives the call's value on
 /// success (an empty string) or its error message, and must be
-/// freed with `swiftify_string_free`.
+/// freed with `swifty_string_free`.
 ///
 /// # Safety
 /// `core` is null or live; the out pointers are valid for writes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_core_take_completion(
-    core: *const SwiftifyCore,
+pub unsafe extern "C" fn swifty_core_take_completion(
+    core: *const SwiftyCore,
     request_id: *mut u64,
     ok: *mut bool,
     payload: *mut *mut c_char,
@@ -298,7 +298,7 @@ pub unsafe extern "C" fn swiftify_core_take_completion(
 /// # Safety
 /// `value` is null or a string returned by this library, not yet freed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_string_free(value: *mut c_char) {
+pub unsafe extern "C" fn swifty_string_free(value: *mut c_char) {
     if !value.is_null() {
         // SAFETY: every string handed out came from `CString::into_raw`.
         drop(unsafe { CString::from_raw(value) });
@@ -315,7 +315,7 @@ macro_rules! async_call {
         /// `core` is null or live; string arguments are null or valid.
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn $name(
-            core: *const SwiftifyCore,
+            core: *const SwiftyCore,
             request_id: u64,
             $($arg: *const c_char),*
         ) {
@@ -346,7 +346,7 @@ macro_rules! async_call {
 
 async_call!(
     /// rebuilds the audio output.
-    swiftify_core_restart_audio_output() => |core| {
+    swifty_core_restart_audio_output() => |core| {
         core.restart_audio_output().await.map(|()| Unit)
     }
 );
@@ -354,7 +354,7 @@ async_call!(
 async_call!(
     /// plays a music file from anywhere on disk; replaced by a later play
     /// call, as above
-    swiftify_core_play_file(path) => |core| prepare {
+    swifty_core_play_file(path) => |core| prepare {
         let ticket = core.begin_playback_request();
     } run {
         core.play_file_as(path, ticket).await.map(|()| Unit)
@@ -368,7 +368,7 @@ async_call!(
 /// `path` and `artwork_dir` are null or valid strings; `error` is null or
 /// valid for a write.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_read_local_tags(
+pub unsafe extern "C" fn swifty_read_local_tags(
     path: *const c_char,
     artwork_dir: *const c_char,
     error: *mut *mut c_char,
@@ -409,7 +409,7 @@ pub unsafe extern "C" fn swiftify_read_local_tags(
 /// # Safety
 /// `path` is null or a valid string; `error` is null or valid for a write.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_read_local_lyrics(path: *const c_char, error: *mut *mut c_char) -> *mut c_char {
+pub unsafe extern "C" fn swifty_read_local_lyrics(path: *const c_char, error: *mut *mut c_char) -> *mut c_char {
     let fail = |message: String| {
         if !error.is_null() {
             // SAFETY: the caller guarantees `error` is writable.
@@ -438,7 +438,7 @@ pub unsafe extern "C" fn swiftify_read_local_lyrics(path: *const c_char, error: 
 /// `path` and `edits` are null or valid strings; `artwork` is null or valid
 /// for `artwork_len` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_write_local_tags(
+pub unsafe extern "C" fn swifty_write_local_tags(
     path: *const c_char,
     edits: *const c_char,
     artwork: *const u8,
@@ -470,7 +470,7 @@ macro_rules! fallible_call {
         /// # Safety
         /// `core` is null or live.
         #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name(core: *const SwiftifyCore $(, $arg: $ty)*) -> *mut c_char {
+        pub unsafe extern "C" fn $name(core: *const SwiftyCore $(, $arg: $ty)*) -> *mut c_char {
             // SAFETY: forwarded from the caller.
             match unsafe { handle(core) } {
                 Some(handle) => {
@@ -483,11 +483,11 @@ macro_rules! fallible_call {
     };
 }
 
-fallible_call!(swiftify_core_play() => |core| core.play());
-fallible_call!(swiftify_core_pause() => |core| core.pause());
-fallible_call!(swiftify_core_seek(position_ms: u32) => |core| core.seek(position_ms));
-fallible_call!(swiftify_core_set_volume(volume: f32) => |core| core.set_volume(volume));
-fallible_call!(swiftify_core_set_playback_shaping(tempo: f32, pitch_semitones: f32, preserves_pitch: bool)
+fallible_call!(swifty_core_play() => |core| core.play());
+fallible_call!(swifty_core_pause() => |core| core.pause());
+fallible_call!(swifty_core_seek(position_ms: u32) => |core| core.seek(position_ms));
+fallible_call!(swifty_core_set_volume(volume: f32) => |core| core.set_volume(volume));
+fallible_call!(swifty_core_set_playback_shaping(tempo: f32, pitch_semitones: f32, preserves_pitch: bool)
     => |core| core.set_playback_shaping(tempo, pitch_semitones, preserves_pitch));
 
 /// returns null on success, or an error message to free.
@@ -495,8 +495,8 @@ fallible_call!(swiftify_core_set_playback_shaping(tempo: f32, pitch_semitones: f
 /// # Safety
 /// `core` is null or live; `gains_db` points to `count` floats.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_core_set_equalizer(
-    core: *const SwiftifyCore,
+pub unsafe extern "C" fn swifty_core_set_equalizer(
+    core: *const SwiftyCore,
     gains_db: *const f32,
     count: usize,
 ) -> *mut c_char {
@@ -517,7 +517,7 @@ macro_rules! query {
         /// # Safety
         /// `core` is null or live.
         #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name(core: *const SwiftifyCore) -> $ty {
+        pub unsafe extern "C" fn $name(core: *const SwiftyCore) -> $ty {
             // SAFETY: forwarded from the caller.
             match unsafe { handle(core) } {
                 Some(handle) => {
@@ -530,17 +530,17 @@ macro_rules! query {
     };
 }
 
-query!(swiftify_core_audio_output_stalled -> bool, false, |core| core.audio_output_stalled());
-query!(swiftify_core_playback_position_ms -> u32, 0, |core| core.playback_position_ms());
-query!(swiftify_core_playback_duration_ms -> u32, 0, |core| core.playback_duration_ms());
-query!(swiftify_core_take_end_of_track -> bool, false, |core| core.take_end_of_track());
-query!(swiftify_core_volume -> f32, 0.75, |core| core.volume());
+query!(swifty_core_audio_output_stalled -> bool, false, |core| core.audio_output_stalled());
+query!(swifty_core_playback_position_ms -> u32, 0, |core| core.playback_position_ms());
+query!(swifty_core_playback_duration_ms -> u32, 0, |core| core.playback_duration_ms());
+query!(swifty_core_take_end_of_track -> bool, false, |core| core.take_end_of_track());
+query!(swifty_core_volume -> f32, 0.75, |core| core.volume());
 
 /// # Safety
 /// `core` is null or live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_core_set_spectrum_enabled(
-    core: *const SwiftifyCore,
+pub unsafe extern "C" fn swifty_core_set_spectrum_enabled(
+    core: *const SwiftyCore,
     enabled: bool,
 ) {
     // SAFETY: forwarded from the caller.
@@ -555,8 +555,8 @@ pub unsafe extern "C" fn swiftify_core_set_spectrum_enabled(
 /// # Safety
 /// `core` is null or live; `out` points to `capacity` writable floats.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_core_spectrum_levels(
-    core: *const SwiftifyCore,
+pub unsafe extern "C" fn swifty_core_spectrum_levels(
+    core: *const SwiftyCore,
     out: *mut f32,
     capacity: usize,
 ) -> usize {
@@ -578,7 +578,7 @@ pub unsafe extern "C" fn swiftify_core_spectrum_levels(
 /// # Safety
 /// `out` points to `capacity` writable floats.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swiftify_equalizer_frequencies(out: *mut f32, capacity: usize) -> usize {
+pub unsafe extern "C" fn swifty_equalizer_frequencies(out: *mut f32, capacity: usize) -> usize {
     if out.is_null() {
         return 0;
     }
@@ -595,8 +595,8 @@ mod tests {
 
     use super::*;
 
-    fn wait_for_completion(core: *const SwiftifyCore) -> (u64, bool, String) {
-        let fd = unsafe { swiftify_core_completion_fd(core) };
+    fn wait_for_completion(core: *const SwiftyCore) -> (u64, bool, String) {
+        let fd = unsafe { swifty_core_completion_fd(core) };
         assert!(fd >= 0);
         let reader = unsafe { &(&*core).completions.receiver };
         for _ in 0..200 {
@@ -606,12 +606,12 @@ mod tests {
             let mut ok = true;
             let mut payload = ptr::null_mut();
             if unsafe {
-                swiftify_core_take_completion(core, &mut request_id, &mut ok, &mut payload)
+                swifty_core_take_completion(core, &mut request_id, &mut ok, &mut payload)
             } {
                 let text = unsafe { CStr::from_ptr(payload) }
                     .to_string_lossy()
                     .into_owned();
-                unsafe { swiftify_string_free(payload) };
+                unsafe { swifty_string_free(payload) };
                 return (request_id, ok, text);
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -621,68 +621,68 @@ mod tests {
 
     #[test]
     fn an_async_call_for_a_missing_file_completes_with_its_error() {
-        let core = swiftify_core_new();
+        let core = swifty_core_new();
         let path = CString::new("/nowhere/song.flac").unwrap();
-        unsafe { swiftify_core_play_file(core, 7, path.as_ptr()) };
+        unsafe { swifty_core_play_file(core, 7, path.as_ptr()) };
 
         let (request_id, ok, payload) = wait_for_completion(core);
         assert_eq!(request_id, 7);
         assert!(!ok);
         assert!(!payload.is_empty());
-        unsafe { swiftify_core_free(core) };
+        unsafe { swifty_core_free(core) };
     }
 
     #[test]
     fn a_missing_argument_completes_instead_of_crashing() {
-        let core = swiftify_core_new();
-        unsafe { swiftify_core_play_file(core, 3, ptr::null()) };
+        let core = swifty_core_new();
+        unsafe { swifty_core_play_file(core, 3, ptr::null()) };
 
         let (request_id, ok, _) = wait_for_completion(core);
         assert_eq!(request_id, 3);
         assert!(!ok);
-        unsafe { swiftify_core_free(core) };
+        unsafe { swifty_core_free(core) };
     }
 
     #[test]
     fn sync_calls_report_errors_and_values() {
-        let core = swiftify_core_new();
-        let error = unsafe { swiftify_core_play(core) };
+        let core = swifty_core_new();
+        let error = unsafe { swifty_core_play(core) };
         assert!(!error.is_null());
-        unsafe { swiftify_string_free(error) };
+        unsafe { swifty_string_free(error) };
 
-        assert!(unsafe { swiftify_core_set_volume(core, 0.4) }.is_null());
-        assert!((unsafe { swiftify_core_volume(core) } - 0.4).abs() < f32::EPSILON);
+        assert!(unsafe { swifty_core_set_volume(core, 0.4) }.is_null());
+        assert!((unsafe { swifty_core_volume(core) } - 0.4).abs() < f32::EPSILON);
 
         let mut levels = [1.0; 64];
         let count =
-            unsafe { swiftify_core_spectrum_levels(core, levels.as_mut_ptr(), levels.len()) };
+            unsafe { swifty_core_spectrum_levels(core, levels.as_mut_ptr(), levels.len()) };
         assert_eq!(count, 48);
         assert!(levels[..count].iter().all(|level| *level == 0.0));
 
         let mut frequencies = [0.0; 8];
         let count =
-            unsafe { swiftify_equalizer_frequencies(frequencies.as_mut_ptr(), frequencies.len()) };
+            unsafe { swifty_equalizer_frequencies(frequencies.as_mut_ptr(), frequencies.len()) };
         assert_eq!(
             &frequencies[..count],
             &[60.0, 150.0, 400.0, 1000.0, 2400.0, 15000.0]
         );
-        unsafe { swiftify_core_free(core) };
+        unsafe { swifty_core_free(core) };
     }
 
     #[test]
     fn the_header_names_the_superseded_message() {
         // the front end tells a replaced request from a failed one by it
-        let header = include_str!("../include/swiftify_core.h");
-        let define = format!("#define SWIFTIFY_CORE_SUPERSEDED \"{}\"", crate::SUPERSEDED);
+        let header = include_str!("../include/swifty_core.h");
+        let define = format!("#define SWIFTY_CORE_SUPERSEDED \"{}\"", crate::SUPERSEDED);
         assert!(header.contains(&define));
     }
 
     #[test]
     fn null_handles_are_harmless() {
-        assert_eq!(unsafe { swiftify_core_completion_fd(ptr::null()) }, -1);
-        let error = unsafe { swiftify_core_pause(ptr::null()) };
+        assert_eq!(unsafe { swifty_core_completion_fd(ptr::null()) }, -1);
+        let error = unsafe { swifty_core_pause(ptr::null()) };
         assert!(!error.is_null());
-        unsafe { swiftify_string_free(error) };
-        unsafe { swiftify_core_free(ptr::null_mut()) };
+        unsafe { swifty_string_free(error) };
+        unsafe { swifty_core_free(ptr::null_mut()) };
     }
 }

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,9 +25,9 @@
 #include <QFontDatabase>
 #include <QLoggingCategory>
 
-namespace swiftify::fonts {
+namespace swifty::fonts {
 
-Q_LOGGING_CATEGORY(lcFonts, "swiftify.fonts")
+Q_LOGGING_CATEGORY(lcFonts, "swifty.fonts")
 
 namespace {
 
@@ -43,12 +44,12 @@ bool loadBundled(const char *family, const char *file)
     }
     const QString applicationDirectory = QCoreApplication::applicationDirPath();
     const QStringList candidates {
-        applicationDirectory + QStringLiteral("/../share/swiftify/fonts/"),
+        applicationDirectory + QStringLiteral("/../share/swifty/fonts/"),
         // inside the macos app bundle
         applicationDirectory + QStringLiteral("/../Resources/fonts/"),
         applicationDirectory + QStringLiteral("/fonts/"),
-#ifdef SWIFTIFY_BUILD_FONT_DIRECTORY
-        QStringLiteral(SWIFTIFY_BUILD_FONT_DIRECTORY "/"),
+#ifdef SWIFTY_BUILD_FONT_DIRECTORY
+        QStringLiteral(SWIFTY_BUILD_FONT_DIRECTORY "/"),
 #endif
     };
     for (const QString &directory : candidates) {
@@ -101,4 +102,4 @@ QString fixedFamily()
     return family;
 }
 
-} // namespace swiftify::fonts
+} // namespace swifty::fonts

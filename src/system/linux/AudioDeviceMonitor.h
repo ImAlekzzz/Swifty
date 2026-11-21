@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,7 +30,7 @@ struct pa_server_info;
 struct pa_sink_info;
 struct pa_threaded_mainloop;
 
-namespace swiftify {
+namespace swifty {
 
 /// watches pulseaudio (pipewire-pulse) for the output going away or arriving.
 ///
@@ -48,6 +49,8 @@ public:
 signals:
     void outputLost();
     void outputArrived();
+    /// where sound goes by default is another device now
+    void defaultOutputChanged();
 
 private:
     struct Sink {
@@ -66,7 +69,7 @@ private:
     void serverInfo(const pa_server_info *info);
     void sinkInfo(const pa_sink_info *info, bool initial);
     void sinkRemoved(uint32_t index);
-    void notifyLost();
+    void notifyLost(const QString &why);
     void notifyArrived();
 
     pa_threaded_mainloop *m_mainloop = nullptr;
@@ -79,4 +82,4 @@ private:
     QDateTime m_defaultChangedAt;
 };
 
-} // namespace swiftify
+} // namespace swifty

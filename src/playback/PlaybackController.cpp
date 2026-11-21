@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,13 +19,14 @@
 
 #include "playback/PlaybackController.h"
 
+#include "core/Diagnostics.h"
+
+#include "playback/LyricsFetcher.h"
+
 #include "app/ErrorCenter.h"
 #include "app/Settings.h"
 #include "core/PlaybackCore.h"
-#include "spotify/SpotifySession.h"
-#include "playback/PlaybackState.h"
 
-#include <QCoreApplication>
 #include <QLoggingCategory>
 #include <QQmlEngine>
 #include <QRandomGenerator>
@@ -33,13 +35,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <QDateTime>
+#include <QTimer>
+
 #include <cmath>
+#include <cstdio>
 #include <iterator>
 #include <utility>
 
-namespace swiftify {
+namespace swifty {
 
-Q_LOGGING_CATEGORY(lcPlayer, "swiftify.player")
+Q_LOGGING_CATEGORY(lcPlayer, "swifty.player")
 
 namespace {
 
@@ -48,18 +54,15 @@ PlaybackController *s_instance = nullptr;
 const QString kCatchphrase = QStringLiteral("i mean i guess bro");
 const QString kVolumeKey = QStringLiteral("playerVolume");
 const QString kVolumeBeforeMuteKey = QStringLiteral("playerVolumeBeforeMute");
-const QString kPlaybackStateKey = QStringLiteral("lastPlaybackState");
 
 /// a restart is offered after this much of a song has played
 constexpr quint32 kRestartThresholdMs = 3'000;
 
 } // namespace
 
-PlaybackController::PlaybackController(PlaybackCore *core, SpotifySession *session, Settings *settings,
-                                       ErrorCenter *errors, QObject *parent)
+PlaybackController::PlaybackController(PlaybackCore *core, Settings *settings, ErrorCenter *errors, QObject *parent)
     : QObject(parent)
     , m_core(core)
-    , m_session(session)
     , m_settings(settings)
     , m_errors(errors)
     , m_upNext(new SongListModel(this))
@@ -81,98 +84,23 @@ PlaybackController::PlaybackController(PlaybackCore *core, SpotifySession *sessi
         m_settings->value(kVolumeBeforeMuteKey, storedVolume > 0.01 ? storedVolume : 0.75).toDouble(), 0.01, 1.0);
     try {
         m_core->setVolume(float(m_volume));
-    } catch (const SpotifyError &) {
+    } catch (const PlaybackError &) {
     }
 
-    const auto updateVisualizers = [this] {
-        m_visualizersEnabled = m_settings->anyVisualizerEnabled();
+    m_visualizersEnabled = m_settings->visualizersEnabled();
+    connect(m_settings, &Settings::visualizersEnabledChanged, this, [this] {
+        m_visualizersEnabled = m_settings->visualizersEnabled();
         updatePlaybackWorkers();
-    };
-    m_visualizersEnabled = m_settings->anyVisualizerEnabled();
-    connect(m_settings, &Settings::crossfadeEnabledChanged, this, [this] { preloadNextTrack(); });
-    connect(m_settings, &Settings::visualizersEnabledChanged, this, updateVisualizers);
-    connect(m_settings, &Settings::playerBarVisualizerChanged, this, updateVisualizers);
-    connect(m_settings, &Settings::trackListVisualizerChanged, this, updateVisualizers);
-    connect(m_settings, &Settings::immersiveVisualizerChanged, this, updateVisualizers);
-    connect(m_session, &SpotifySession::playbackConnected, this, [this] {
-        try {
-            m_core->setVolume(float(m_volume));
-        } catch (const SpotifyError &) {
-        }
     });
-    connect(m_session, &SpotifySession::loggedOut, this, &PlaybackController::reset);
-
-    restorePlaybackState();
-    m_checkpointTimer.setInterval(5000);
-    connect(&m_checkpointTimer, &QTimer::timeout, this, &PlaybackController::savePlaybackState);
-    m_saveTimer.setSingleShot(true);
-    m_saveTimer.setInterval(150);
-    connect(&m_saveTimer, &QTimer::timeout, this, &PlaybackController::savePlaybackState);
-    connect(this, &PlaybackController::currentSongChanged, this, &PlaybackController::schedulePlaybackSave);
-    connect(this, &PlaybackController::queueChanged, this, &PlaybackController::schedulePlaybackSave);
-    connect(this, &PlaybackController::shuffleChanged, this, &PlaybackController::schedulePlaybackSave);
-    connect(this, &PlaybackController::repeatModeChanged, this, &PlaybackController::schedulePlaybackSave);
-    connect(this, &PlaybackController::playingChanged, this, [this] {
-        if (m_playing) m_checkpointTimer.start();
-        else m_checkpointTimer.stop();
-        schedulePlaybackSave();
-    });
-    connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, &PlaybackController::savePlaybackState);
-    connect(m_core, &PlaybackCore::remoteTrackStarted, this, &PlaybackController::adoptRemoteSong);
-    connect(m_core, &PlaybackCore::remotePlayingChanged, this, &PlaybackController::followRemotePlaying);
-    connect(m_core, &PlaybackCore::remoteVolumeChanged, this, &PlaybackController::followRemoteVolume);
 }
 
 PlaybackController::~PlaybackController()
 {
-    savePlaybackState();
     m_playbackRequest.cancel();
     m_lyricsRequest.cancel();
     if (s_instance == this) {
         s_instance = nullptr;
     }
-}
-
-void PlaybackController::restorePlaybackState()
-{
-    const auto state = playbackstate::decode(m_settings->value(kPlaybackStateKey).toByteArray());
-    if (!state) return;
-    m_queue = state->queue;
-    m_shuffledQueue = state->shuffled;
-    m_history = state->history;
-    m_shuffle = state->shuffle;
-    m_repeatMode = RepeatMode(state->repeat);
-    m_currentSong = m_queue.at(state->currentIndex);
-    m_livePositionMs = m_publishedPositionMs = state->positionMs;
-    m_durationMs = state->durationMs;
-    m_resumePositionMs = state->positionMs;
-    m_playbackNeedsLoad = true;
-    m_restoredPlayback = true;
-    // No core load, network call, lyrics request, preloading or sound on launch.
-    m_upNext->setSongs(upNextSongs());
-    m_previouslyPlayed->setSongs(previouslyPlayedSongs());
-}
-
-void PlaybackController::schedulePlaybackSave()
-{
-    if (!m_saveTimer.isActive()) m_saveTimer.start();
-}
-
-void PlaybackController::savePlaybackState()
-{
-    if (!m_currentSong) {
-        if (m_settings->contains(kPlaybackStateKey)) {
-            m_settings->remove(kPlaybackStateKey);
-            m_settings->sync();
-        }
-        return;
-    }
-    const QByteArray state = playbackstate::encode(m_queue, m_shuffledQueue, m_history, *m_currentSong,
-        m_livePositionMs, m_durationMs, m_shuffle, int(m_repeatMode));
-    // Debug loading tests and unsupported URIs must not replace a real song.
-    if (state.isEmpty() || state == m_settings->value(kPlaybackStateKey).toByteArray()) return;
-    m_settings->setValue(kPlaybackStateKey, state);
-    m_settings->sync();
 }
 
 PlaybackController *PlaybackController::instance()
@@ -192,82 +120,16 @@ void PlaybackController::reportError(const QString &context, const QString &mess
     m_errors->show(message);
 }
 
-void PlaybackController::setStatus(const QString &status)
-{
-    m_session->setStatus(status);
-}
-
-void PlaybackController::adoptRemoteSong(const Song &song)
-{
-    // a resume of ours still running would play over it
-    cancelPlaybackRequest();
-    if (m_currentSong && !m_currentSong->isSameInstance(song)) {
-        m_history.append(*m_currentSong);
-    }
-    m_remote = true;
-    m_crossfadeStarted = false;
-    m_playbackNeedsLoad = false;
-    // a song restored from the last run, waiting for play, is not what plays
-    m_restoredPlayback = false;
-    m_resumePositionMs = 0;
-    // what comes next is up to whoever started it; swiftify's own up next
-    // would only be wrong about it
-    m_queue = {song};
-    m_shuffledQueue = {song};
-    setCurrentSong(song);
-    setLoading(false);
-    setLivePosition(m_core->playbackPositionMs());
-    setDuration(quint32(std::max(song.durationMs, 0)));
-    loadLyrics(song);
-    queueDidChange();
-    setStatus(QStringLiteral("Playing"));
-    setPlaying(true);
-    syncMediaSession();
-}
-
-void PlaybackController::followRemotePlaying(bool playing)
-{
-    // a song of ours still loading says nothing of anyone else's choice
-    if (!m_currentSong || playing == m_playing || m_playbackRequest.isRunning()) {
-        return;
-    }
-    setStatus(playing ? QStringLiteral("Playing") : QStringLiteral("Paused"));
-    setPlaying(playing);
-    syncMediaSession();
-}
-
-void PlaybackController::followRemoteVolume(float volume)
-{
-    const double clamped = std::clamp(double(volume), 0.0, 1.0);
-    if (std::abs(clamped - m_volume) < 0.005) {
-        return;
-    }
-    m_volume = clamped;
-    m_settings->setValue(kVolumeKey, clamped);
-    if (clamped > 0.01) {
-        m_volumeBeforeMute = clamped;
-        m_settings->setValue(kVolumeBeforeMuteKey, clamped);
-    }
-    emit volumeChanged();
-}
-
 // --- state ---------------------------------------------------------------------------
 
-void PlaybackController::setCurrentSong(const std::optional<Song> &song, quint32 crossfadeMs)
+void PlaybackController::setCurrentSong(const std::optional<Song> &song)
 {
     const bool changed = song.has_value() != m_currentSong.has_value()
         || (song && m_currentSong && !song->isSameInstance(*m_currentSong));
     m_currentSong = song;
-    m_crossfadeMs = crossfadeMs;
-    m_crossfadeDeadline.setRemainingTime(qint64(crossfadeMs));
     if (changed) {
         emit currentSongChanged();
     }
-}
-
-int PlaybackController::crossfadeRemainingMs() const
-{
-    return m_crossfadeMs > 0 ? int(m_crossfadeDeadline.remainingTime()) : 0;
 }
 
 void PlaybackController::setPlaying(bool playing)
@@ -278,9 +140,6 @@ void PlaybackController::setPlaying(bool playing)
     m_playing = playing;
     emit playingChanged();
     updatePlaybackWorkers();
-    if (m_playing) {
-        preloadNextTrack();
-    }
 }
 
 void PlaybackController::setLoading(bool loading)
@@ -360,27 +219,20 @@ QList<Song> PlaybackController::previouslyPlayedSongs() const
     return index < 0 ? QList<Song> {} : activeQueue().mid(0, index);
 }
 
-std::optional<Song> PlaybackController::playableFrom(int index, int direction, bool allowWrap) const
-{
-    const QList<Song> &queue = activeQueue();
-    for (qsizetype step = 1; step <= queue.size(); ++step) {
-        qsizetype row = index + step * direction;
-        if (row < 0 || row >= queue.size()) {
-            if (!allowWrap) {
-                break;
-            }
-            row = (row + queue.size()) % queue.size();
-        }
-        if (queue.at(row).isPlayable) {
-            return queue.at(row);
-        }
-    }
-    return std::nullopt;
-}
-
 std::optional<Song> PlaybackController::nextQueueSong(bool allowWrap) const
 {
-    return playableFrom(m_currentSong ? currentQueueIndex() : -1, 1, allowWrap);
+    const QList<Song> &queue = activeQueue();
+    if (queue.isEmpty()) {
+        return std::nullopt;
+    }
+    const int index = currentQueueIndex();
+    if (!m_currentSong || index < 0) {
+        return queue.first();
+    }
+    if (index < queue.size() - 1) {
+        return queue.at(index + 1);
+    }
+    return allowWrap ? std::optional(queue.first()) : std::nullopt;
 }
 
 std::optional<Song> PlaybackController::upcomingSong() const
@@ -391,15 +243,17 @@ std::optional<Song> PlaybackController::upcomingSong() const
 std::optional<Song> PlaybackController::precedingSong() const
 {
     if (m_shuffle) {
-        const auto found = std::find_if(m_history.crbegin(), m_history.crend(),
-                                        [](const Song &song) { return song.isPlayable; });
-        return found == m_history.crend() ? std::nullopt : std::optional(*found);
+        return m_history.isEmpty() ? std::nullopt : std::optional(m_history.last());
     }
+    const QList<Song> &queue = activeQueue();
     const int index = currentQueueIndex();
     if (index < 0) {
         return std::nullopt;
     }
-    return playableFrom(index, -1, m_repeatMode == RepeatMode::All);
+    if (index == 0) {
+        return m_repeatMode == RepeatMode::All && !queue.isEmpty() ? std::optional(queue.last()) : std::nullopt;
+    }
+    return queue.at(index - 1);
 }
 
 bool PlaybackController::canSkipBackward() const
@@ -407,26 +261,24 @@ bool PlaybackController::canSkipBackward() const
     if (!m_currentSong) {
         return false;
     }
-    if (m_remote) {
-        return true;
-    }
     if (m_livePositionMs > kRestartThresholdMs) {
         return true;
     }
-    return precedingSong().has_value();
+    if (m_shuffle) {
+        return !m_history.isEmpty();
+    }
+    const int index = currentQueueIndex();
+    return index >= 0 && (index > 0 || m_repeatMode == RepeatMode::All);
 }
 
 bool PlaybackController::canSkipForward() const
 {
-    if (m_remote && m_currentSong) {
-        return true;
-    }
     const QList<Song> &queue = activeQueue();
     const int index = currentQueueIndex();
     if (!m_currentSong || queue.isEmpty() || index < 0) {
         return false;
     }
-    return nextQueueSong(m_repeatMode == RepeatMode::All).has_value();
+    return index < queue.size() - 1 || m_repeatMode == RepeatMode::All;
 }
 
 void PlaybackController::rebuildShuffledQueue(const std::optional<Song> &startingWith)
@@ -483,23 +335,6 @@ void PlaybackController::queueDidChange()
     m_upNext->setSongs(upNextSongs());
     m_previouslyPlayed->setSongs(previouslyPlayedSongs());
     emit queueChanged();
-    preloadNextTrack();
-}
-
-void PlaybackController::preloadNextTrack()
-{
-    if (!m_playing || !m_currentSong || m_currentSong->isLocalFile()) {
-        return;
-    }
-    const std::optional<Song> next = m_repeatMode == RepeatMode::One ? m_currentSong : upcomingSong();
-    if (!next || next->isLocalFile()) {
-        return;
-    }
-    try {
-        m_core->preloadTrack(next->uri, m_settings->crossfadeEnabled());
-    } catch (const SpotifyError &error) {
-        qCDebug(lcPlayer) << "Could not preload the next track:" << error.message();
-    }
 }
 
 void PlaybackController::syncMediaSession()
@@ -535,18 +370,6 @@ void PlaybackController::shufflePlay(SongListModel *model)
     beginPlayback(model->songs().at(index), model->songs(), false);
 }
 
-void PlaybackController::playInOrder(SongListModel *model)
-{
-    if (!model || model->count() == 0) {
-        return;
-    }
-    if (m_shuffle) {
-        m_shuffle = false;
-        emit shuffleChanged();
-    }
-    beginPlayback(model->songs().at(0), model->songs(), false);
-}
-
 void PlaybackController::playSong(const Song &song)
 {
     beginPlayback(song, {song}, false);
@@ -556,7 +379,7 @@ void PlaybackController::playLoadingTest()
 {
     Song song;
     song.name = QStringLiteral("Loading Test");
-    song.artists = QStringLiteral("Swiftify");
+    song.artists = QStringLiteral("Swifty");
     song.albumName = QStringLiteral("Debugging");
     song.uri = QString::fromLatin1(kLoadingTestUri);
     song.durationMs = 180'000;
@@ -572,15 +395,6 @@ void PlaybackController::beginPlayback(const Song &song, const QList<Song> &queu
         rebuildShuffledQueue(song);
     } else {
         m_shuffledQueue.clear();
-    }
-    if (!song.isPlayable) {
-        const QList<Song> &active = activeQueue();
-        const auto at = std::find_if(active.begin(), active.end(),
-                                     [&](const Song &item) { return item.isSameInstance(song); });
-        if (const auto next = playableFrom(int(at - active.begin()), 1, m_repeatMode == RepeatMode::All)) {
-            startPlayback(*next, true, fromSearch);
-            return;
-        }
     }
     startPlayback(song, true, fromSearch);
 }
@@ -655,50 +469,62 @@ void PlaybackController::playFromQueue(const Song &song)
     startPlayback(song);
 }
 
-void PlaybackController::startPlayback(const Song &song, bool recordHistory, bool fromSearch,
-                                       quint32 crossfadeDurationMs, quint32 initialPositionMs)
+void PlaybackController::restoreSession(const Song &current, const QList<Song> &queue, quint32 positionMs)
 {
-    // playing a song here takes over from whatever started one elsewhere
-    m_remote = false;
+    if (m_currentSong || !current.isValid()) {
+        return;
+    }
+    const bool inQueue = std::any_of(queue.begin(), queue.end(), [&](const Song &item) { return item.isSameInstance(current); });
+    m_queue = inQueue ? queue : QList<Song> {current};
+    m_history.clear();
+    if (m_shuffle) {
+        rebuildShuffledQueue(current);
+    } else {
+        m_shuffledQueue.clear();
+    }
+    // play loads it, and then goes to where it was
+    m_restoreUri = current.uri;
+    m_restoreMs = positionMs;
+    m_playbackNeedsLoad = true;
+    setCurrentSong(current);
+    setPlaying(false);
+    setLoading(false);
+    setLivePosition(positionMs);
+    setDuration(quint32(std::max(current.durationMs, 0)));
+    loadLyrics(current);
+    queueDidChange();
+    syncMediaSession();
+}
+
+void PlaybackController::startPlayback(const Song &song, bool recordHistory, bool fromSearch)
+{
+    // a place saved for one song is not for another
+    if (song.uri != m_restoreUri) {
+        m_restoreMs = 0;
+    }
     if (recordHistory && m_currentSong && !m_currentSong->isSameInstance(song)) {
         m_history.append(*m_currentSong);
     }
 
     const CancelToken token = m_playbackRequest.renew();
-    const bool steppingBack = std::exchange(m_steppingBack, false);
-    m_crossfadeStarted = crossfadeDurationMs > 0;
-    const quint64 crossfadeSerial = ++m_crossfadeSerial;
     m_playbackNeedsLoad = true;
-    m_restoredPlayback = false;
-    m_resumePositionMs = initialPositionMs;
-    setCurrentSong(song, crossfadeDurationMs);
+    setCurrentSong(song);
     setPlaying(false);
     setLoading(true);
-    setLivePosition(initialPositionMs);
-    setDuration(initialPositionMs > 0 ? quint32(std::max(0, song.durationMs)) : 0);
+    setLivePosition(0);
+    setDuration(0);
     loadLyrics(song);
     queueDidChange();
     syncMediaSession();
 
-    detach(runStartPlayback(song, token, fromSearch, steppingBack, crossfadeDurationMs, initialPositionMs));
-    if (crossfadeDurationMs > 0) {
-        QTimer::singleShot(int(crossfadeDurationMs + 100), this, [this, crossfadeSerial] {
-            if (crossfadeSerial == m_crossfadeSerial) {
-                m_crossfadeStarted = false;
-                preloadNextTrack();
-            }
-        });
-    }
+    detach(runStartPlayback(song, token, fromSearch));
 }
 
-QCoro::Task<> PlaybackController::runStartPlayback(Song song, CancelToken token, bool fromSearch, bool steppingBack,
-                                                    quint32 crossfadeDurationMs, quint32 initialPositionMs)
+QCoro::Task<> PlaybackController::runStartPlayback(Song song, CancelToken token, bool fromSearch)
 {
     QString failure;
-    bool unavailable = false;
     bool cancelled = false;
     try {
-        setStatus(QStringLiteral("Loading"));
         m_errors->clear();
         if (song.uri == QLatin1StringView(kLoadingTestUri)) {
             // the debugging song: loading, and nothing else, until withdrawn.
@@ -709,7 +535,7 @@ QCoro::Task<> PlaybackController::runStartPlayback(Song song, CancelToken token,
             }
             throw Cancelled();
         }
-        // the tap goes on before librespot starts filling its output queue, so
+        // the tap goes on before the core starts filling its output queue, so
         // the first spectrum frame lines up with what reaches the speakers.
         m_core->setSpectrumEnabled(m_visualizersEnabled && m_presentationActive);
 
@@ -721,72 +547,27 @@ QCoro::Task<> PlaybackController::runStartPlayback(Song song, CancelToken token,
             m_audioOutputNeedsRestart = false;
         }
 
-        if (song.isLocalFile()) {
-            // the core gives up on a request that something newer replaced:
-            // another song, or the session reconnecting. this song is still
-            // the one wanted, unless the request was withdrawn
-            bool retry = false;
-            try {
-                co_await m_core->playFile(song.localPath());
-            } catch (const SpotifyError &error) {
-                if (error.kind() != SpotifyError::Kind::Superseded) {
-                    throw;
-                }
-                retry = true;
+        // the core gives up on a request that something newer replaced:
+        // another song, or the audio output being rebuilt. this song is still
+        // the one wanted, unless the request was withdrawn
+        bool retry = false;
+        try {
+            co_await m_core->playFile(song.localPath());
+        } catch (const PlaybackError &error) {
+            if (error.kind() != PlaybackError::Kind::Superseded) {
+                throw;
             }
-            if (retry) {
-                throwIfCancelled(token);
-                co_await m_core->playFile(song.localPath());
-            }
-        } else {
-            co_await m_session->ensureFreshPlaybackConnection();
-            // another song may have been chosen while the connection was
-            // checked. starting this one now would play it under that one,
-            // or in its place
-            throwIfCancelled(token);
-            bool retry = false;
-            bool fallbackFromCrossfade = false;
-            try {
-                if (crossfadeDurationMs > 0) {
-                    try {
-                        co_await m_core->crossfadeTrack(song.uri, crossfadeDurationMs);
-                    } catch (const SpotifyError &error) {
-                        if (error.kind() == SpotifyError::Kind::Superseded) {
-                            throw;
-                        }
-                        qCDebug(lcPlayer) << "Crossfade could not start; loading normally:" << error.message();
-                        throwIfCancelled(token);
-                        fallbackFromCrossfade = true;
-                    }
-                } else {
-                    co_await m_core->playTrack(song.uri);
-                }
-            } catch (const SpotifyError &) {
-                retry = true;
-            }
-            if (fallbackFromCrossfade && !retry) {
-                try {
-                    co_await m_core->playTrack(song.uri);
-                } catch (const SpotifyError &) {
-                    retry = true;
-                }
-            }
-            if (retry) {
-                throwIfCancelled(token);
-                co_await m_session->ensureFreshPlaybackConnection(true);
-                throwIfCancelled(token);
-                co_await m_core->playTrack(song.uri);
-            }
+            retry = true;
         }
-        throwIfCancelled(token);
-        if (!isCurrent(song)) throw Cancelled();
-        if (initialPositionMs > 0) m_core->seek(initialPositionMs);
+        if (retry) {
+            throwIfCancelled(token);
+            co_await m_core->playFile(song.localPath());
+        }
     } catch (const Cancelled &) {
-        // a logout replaced the core or the session under this request.
+        // the request was withdrawn.
         cancelled = true;
-    } catch (const SpotifyError &error) {
+    } catch (const PlaybackError &error) {
         failure = error.message();
-        unavailable = error.kind() == SpotifyError::Kind::Unavailable;
     }
 
     const bool withdrawn = cancelled || isCancelled(token) || !isCurrent(song);
@@ -794,26 +575,33 @@ QCoro::Task<> PlaybackController::runStartPlayback(Song song, CancelToken token,
         // the core started the song anyway, because nobody told it the request
         // had been withdrawn.
         silenceWithdrawnPlayback();
-    } else if (unavailable && skipUnavailable(song, steppingBack)) {
-        // the next song is loading in its place
     } else if (!failure.isNull()) {
         // a load that timed out here is still running in the core, and would
         // start the song whenever it finally arrived.
         try {
             m_core->pause();
-        } catch (const SpotifyError &) {
+        } catch (const PlaybackError &) {
         }
         m_core->setSpectrumEnabled(false);
-        setStatus(m_session->isConnected() ? QStringLiteral("Connected") : QStringLiteral("Disconnected"));
         setLoading(false);
         setPlaying(false);
         syncMediaSession();
         reportError(QStringLiteral("Playing %1").arg(song.uri), failure);
     } else {
-        setStatus(QStringLiteral("Playing"));
         m_playbackNeedsLoad = false;
-        m_resumePositionMs = 0;
         setLoading(false);
+        if (m_restoreMs > 0 && m_restoreUri == song.uri) {
+            // the song was left part way: it starts from there, with no sound
+            // from the beginning in between
+            const quint32 target = std::exchange(m_restoreMs, 0);
+            try {
+                m_core->pause();
+                m_core->seek(target);
+                setLivePosition(target);
+                m_core->play();
+            } catch (const PlaybackError &) {
+            }
+        }
         setPlaying(true);
         if (fromSearch) {
             emit playedFromSearch(song);
@@ -842,13 +630,12 @@ void PlaybackController::pause()
     cancelPlaybackRequest();
     setLoading(false);
     if (m_currentSong) {
-        setStatus(QStringLiteral("Paused"));
     }
     setPlaying(false);
     syncMediaSession();
     try {
         m_core->pause();
-    } catch (const SpotifyError &error) {
+    } catch (const PlaybackError &error) {
         qCInfo(lcPlayer).noquote() << "pausing playback:" << error.message();
     }
 }
@@ -861,8 +648,7 @@ void PlaybackController::resume()
     // pause may have withdrawn the load before this song reached the core, or
     // the song has finished and there is nothing left to resume.
     if (m_playbackNeedsLoad) {
-        const quint32 position = m_durationMs > 0 && m_resumePositionMs >= m_durationMs ? 0 : m_resumePositionMs;
-        startPlayback(*m_currentSong, false, false, 0, position);
+        startPlayback(*m_currentSong, false);
         return;
     }
     detach(runResume(m_playbackRequest.renew()));
@@ -878,10 +664,9 @@ QCoro::Task<> PlaybackController::runResume(CancelToken token)
     }
     try {
         m_core->play();
-        setStatus(QStringLiteral("Playing"));
         setPlaying(true);
         syncMediaSession();
-    } catch (const SpotifyError &error) {
+    } catch (const PlaybackError &error) {
         if (!isCancelled(token)) {
             reportError(QStringLiteral("Resuming playback"), error.message());
         }
@@ -901,7 +686,7 @@ void PlaybackController::silenceWithdrawnPlayback()
     }
     try {
         m_core->pause();
-    } catch (const SpotifyError &) {
+    } catch (const PlaybackError &) {
     }
 }
 
@@ -909,18 +694,15 @@ void PlaybackController::invalidateAudioOutput()
 {
     cancelPlaybackRequest();
     m_audioOutputNeedsRestart = true;
-    // whatever stopped the device may also have dropped the spotify session.
-    m_session->markPlaybackConnectionSuspect();
     if (!m_playing) {
         return;
     }
     setPlaying(false);
-    setStatus(QStringLiteral("Paused"));
     // the core is still convinced it is playing, and its own clock would keep
     // running. stop it, so a later resume starts from a known state.
     try {
         m_core->pause();
-    } catch (const SpotifyError &) {
+    } catch (const PlaybackError &) {
     }
     syncMediaSession();
 }
@@ -931,7 +713,26 @@ void PlaybackController::prepareForSleep()
     if (m_playing) {
         pause();
     }
-    m_session->markPlaybackConnectionSuspect();
+}
+
+void PlaybackController::refreshAudioOutput()
+{
+    // a switch often comes as several changes at once: one rebuild, after them
+    if (m_outputRefreshPending) {
+        return;
+    }
+    m_outputRefreshPending = true;
+    QTimer::singleShot(700, this, [this] {
+        m_outputRefreshPending = false;
+        if (!m_playing || !m_currentSong || m_playbackNeedsLoad) {
+            // nothing is sounding; the next play opens the output anew if it needs to
+            m_audioOutputNeedsRestart = true;
+            return;
+        }
+        diagnostic("playback", QStringLiteral("the sound output changed under the song, so it is opened anew"));
+        m_audioOutputNeedsRestart = true;
+        detach(runResume(m_playbackRequest.renew()));
+    });
 }
 
 QCoro::Task<> PlaybackController::restartAudioOutput(CancelToken token)
@@ -944,19 +745,11 @@ QCoro::Task<> PlaybackController::restartAudioOutput(CancelToken token)
     const quint32 position = m_livePositionMs;
     QString failure;
     try {
-        setStatus(QStringLiteral("Loading"));
         co_await m_core->restartAudioOutput();
         throwIfCancelled(token);
         m_audioOutputNeedsRestart = false;
 
-        if (song.isLocalFile()) {
-            co_await m_core->playFile(song.localPath());
-        } else {
-            // reconnect now instead of waiting for a dead session to time out
-            co_await m_session->ensureFreshPlaybackConnection(true);
-            throwIfCancelled(token);
-            co_await m_core->playTrack(song.uri);
-        }
+        co_await m_core->playFile(song.localPath());
         throwIfCancelled(token);
         if (!isCurrent(song)) {
             co_return;
@@ -965,7 +758,6 @@ QCoro::Task<> PlaybackController::restartAudioOutput(CancelToken token)
             m_core->seek(position);
         }
         m_playbackNeedsLoad = false;
-        setStatus(QStringLiteral("Playing"));
         setPlaying(true);
         m_errors->clear();
         syncMediaSession();
@@ -973,7 +765,7 @@ QCoro::Task<> PlaybackController::restartAudioOutput(CancelToken token)
     } catch (const Cancelled &) {
         silenceWithdrawnPlayback();
         co_return;
-    } catch (const SpotifyError &error) {
+    } catch (const PlaybackError &error) {
         failure = error.message();
     }
 
@@ -986,10 +778,9 @@ QCoro::Task<> PlaybackController::restartAudioOutput(CancelToken token)
     }
     try {
         m_core->pause();
-    } catch (const SpotifyError &) {
+    } catch (const PlaybackError &) {
     }
     setPlaying(false);
-    setStatus(m_session->isConnected() ? QStringLiteral("Connected") : QStringLiteral("Disconnected"));
     reportError(QStringLiteral("Restarting the audio output"), failure);
     syncMediaSession();
 }
@@ -998,74 +789,44 @@ QCoro::Task<> PlaybackController::restartAudioOutput(CancelToken token)
 
 void PlaybackController::skipBackward()
 {
-    if (m_remote && m_core->skipRemote(false)) {
-        return;
-    }
     // a finished song has nothing left in the core to rewind.
     if (m_livePositionMs > kRestartThresholdMs && !m_playbackNeedsLoad) {
         seek(0);
         return;
     }
-    stepBack();
+    if (m_shuffle) {
+        if (m_history.isEmpty()) {
+            return;
+        }
+        startPlayback(m_history.takeLast(), false);
+        return;
+    }
+    const int index = currentQueueIndex();
+    if (index < 0) {
+        return;
+    }
+    const QList<Song> queue = activeQueue();
+    if (index > 0) {
+        startPlayback(queue.at(index - 1), false);
+    } else if (m_repeatMode == RepeatMode::All && !queue.isEmpty()) {
+        startPlayback(queue.last(), false);
+    }
 }
 
 void PlaybackController::skipToPreviousSong()
 {
-    if (m_remote && m_core->skipRemote(false)) {
-        return;
-    }
-    stepBack();
-}
-
-bool PlaybackController::stepBack()
-{
     const std::optional<Song> previous = precedingSong();
     if (!previous) {
-        return false;
+        return;
     }
-    if (m_shuffle) {
-        // the history goes back to it, along with the unplayable songs after it
-        const auto at = std::find_if(m_history.crbegin(), m_history.crend(),
-                                     [&](const Song &song) { return song.isSameInstance(*previous); });
-        m_history.erase(std::prev(at.base()), m_history.cend());
+    if (m_shuffle && !m_history.isEmpty()) {
+        m_history.removeLast();
     }
-    m_steppingBack = true;
     startPlayback(*previous, false);
-    return true;
-}
-
-bool PlaybackController::skipUnavailable(const Song &song, bool steppingBack)
-{
-    // every occurrence of it, so the queue never stops on it again
-    bool marked = false;
-    for (QList<Song> *songs : {&m_queue, &m_shuffledQueue, &m_history}) {
-        for (Song &item : *songs) {
-            if (item.uri == song.uri && item.isPlayable) {
-                item.isPlayable = false;
-                marked = true;
-            }
-        }
-    }
-    if (marked) {
-        queueDidChange();
-    }
-    if (steppingBack && stepBack()) {
-        return true;
-    }
-    const std::optional<Song> next = nextQueueSong(m_repeatMode == RepeatMode::All);
-    if (!next) {
-        return false;
-    }
-    // left out of the history, as it never played
-    startPlayback(*next, false);
-    return true;
 }
 
 void PlaybackController::skipForward()
 {
-    if (m_remote && m_core->skipRemote(true)) {
-        return;
-    }
     if (const auto next = nextQueueSong(m_repeatMode == RepeatMode::All)) {
         startPlayback(*next);
     }
@@ -1075,19 +836,12 @@ void PlaybackController::seek(int requestedMs)
 {
     // until this song has loaded, or once it has finished, the core holds
     // something else: the previous song, or nothing it can resume.
-    if (m_playbackNeedsLoad && !m_restoredPlayback) {
+    if (m_playbackNeedsLoad) {
         return;
     }
     quint32 positionMs = quint32(std::max(requestedMs, 0));
     if (m_durationMs > 0) {
         positionMs = std::min(positionMs, m_durationMs);
-    }
-    if (m_restoredPlayback) {
-        m_resumePositionMs = positionMs;
-        setLivePosition(positionMs);
-        schedulePlaybackSave();
-        syncMediaSession();
-        return;
     }
     try {
         m_core->seek(positionMs);
@@ -1104,8 +858,7 @@ void PlaybackController::seek(int requestedMs)
             m_core->pause();
         }
         syncMediaSession();
-        schedulePlaybackSave();
-    } catch (const SpotifyError &error) {
+    } catch (const PlaybackError &error) {
         reportError(QStringLiteral("Seeking playback"), error.message());
     }
 }
@@ -1130,7 +883,7 @@ void PlaybackController::setVolume(double requested)
     }
     try {
         m_core->setVolume(float(volume));
-    } catch (const SpotifyError &error) {
+    } catch (const PlaybackError &error) {
         reportError(QStringLiteral("Changing volume"), error.message());
         return;
     }
@@ -1217,28 +970,6 @@ void PlaybackController::pollPlayback()
         return;
     }
     syncPositionAndDuration();
-    if (m_playing && !m_crossfadeStarted && m_settings->crossfadeEnabled() && m_currentSong
-        && !m_currentSong->isLocalFile() && m_durationMs > 0) {
-        std::optional<Song> next;
-        bool recordHistory = true;
-        if (m_repeatMode == RepeatMode::One) {
-            next = m_currentSong;
-            recordHistory = false;
-        } else {
-            next = upcomingSong();
-        }
-        if (next && !next->isLocalFile()) {
-            quint32 duration = quint32(m_settings->crossfadeDurationSeconds() * 1000);
-            duration = std::min(duration, m_durationMs / 2);
-            if (next->durationMs > 0) {
-                duration = std::min(duration, quint32(next->durationMs) / 2);
-            }
-            if (duration >= 500 && m_livePositionMs >= m_durationMs - duration) {
-                startPlayback(*next, recordHistory, false, duration);
-                return;
-            }
-        }
-    }
     if (m_core->takeEndOfTrack() && isPlaybackAtEnd()) {
         handleEndOfTrack();
     }
@@ -1265,9 +996,35 @@ void PlaybackController::stopIfAudioOutputStalled()
     // a bluetooth device that left. rebuilding the output unasked would start
     // the song on whatever is now the default, usually the speaker the person
     // just walked away from.
-    if (m_playing && m_core->audioOutputStalled()) {
-        invalidateAudioOutput();
+    // not while the output is being opened anew, which can take a moment
+    if (!m_playing || m_outputRepairPending || m_playbackRequest.isRunning() || !m_core->audioOutputStalled()) {
+        return;
     }
+#ifdef Q_OS_LINUX
+    // here the sound server tells of a device that went away (AudioDeviceMonitor,
+    // which pauses), so an output that fails with no such word means only the
+    // stream broke, as when the server reconfigures itself as another program
+    // starts. that is opened anew once; if it breaks again soon after, it is
+    // the device, and playback pauses
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_lastOutputRepairAt == 0 || now - m_lastOutputRepairAt > 30000) {
+        m_outputRepairPending = true;
+        diagnostic("playback", QStringLiteral("the audio output failed; unless a device was lost, it is opened anew"));
+        QTimer::singleShot(1500, this, [this] {
+            m_outputRepairPending = false;
+            // a lost device pauses the song by now, and then there is nothing to repair
+            if (!m_playing || !m_core->audioOutputStalled()) {
+                return;
+            }
+            m_lastOutputRepairAt = QDateTime::currentMSecsSinceEpoch();
+            m_audioOutputNeedsRestart = true;
+            detach(runResume(m_playbackRequest.renew()));
+        });
+        return;
+    }
+#endif
+    diagnostic("playback", QStringLiteral("the audio output stopped taking sound, so playback pauses"));
+    invalidateAudioOutput();
 }
 
 bool PlaybackController::isPlaybackAtEnd() const
@@ -1296,11 +1053,10 @@ void PlaybackController::handleEndOfTrack()
     // output can resume from the end, so play starts the song over.
     try {
         m_core->pause();
-    } catch (const SpotifyError &) {
+    } catch (const PlaybackError &) {
     }
     m_playbackNeedsLoad = true;
     setPlaying(false);
-    setStatus(QStringLiteral("Finished"));
     syncMediaSession();
 }
 
@@ -1334,15 +1090,17 @@ QCoro::Task<> PlaybackController::runLoadLyrics(Song song, CancelToken token)
     if (song.uri == QLatin1StringView(kLoadingTestUri)) {
         // nothing to ask anyone for
     } else if (song.isLocalFile()) {
-        // spotify has nothing for a file of the person's own; a .lrc kept
-        // beside it does
-        lyrics = Lyrics::besideFile(song.localPath());
-    } else {
-        try {
-            lyrics = Lyrics::fromJson((co_await m_core->lyricsJson(song.uri)).toUtf8());
-        } catch (const Cancelled &) {
-            co_return;
-        } catch (const SpotifyError &) {
+        // the internet first, when allowed: it has synced lyrics for songs
+        // whose files carry none. then a .lrc kept beside the file, then
+        // whatever is written into the file's own tags
+        if (m_lyricsFetcher && m_settings->onlineLyrics()) {
+            lyrics = co_await m_lyricsFetcher->fetch(song);
+        }
+        if (!lyrics && !isCancelled(token) && isCurrent(song)) {
+            lyrics = Lyrics::besideFile(song.localPath());
+        }
+        if (!lyrics && !isCancelled(token) && isCurrent(song)) {
+            lyrics = Lyrics::embedded(song.localPath());
         }
     }
     if (isCancelled(token) || !isCurrent(song)) {
@@ -1488,11 +1246,6 @@ void PlaybackController::cancelSleepTimer()
 
 void PlaybackController::reset()
 {
-    m_saveTimer.stop();
-    m_checkpointTimer.stop();
-    m_settings->remove(kPlaybackStateKey);
-    m_settings->sync();
-    m_remote = false;
     m_playbackRequest.cancel();
     m_lyricsRequest.cancel();
     m_queue.clear();
@@ -1500,8 +1253,6 @@ void PlaybackController::reset()
     m_shuffledQueue.clear();
     setCurrentSong(std::nullopt);
     m_playbackNeedsLoad = false;
-    m_restoredPlayback = false;
-    m_resumePositionMs = 0;
     m_audioOutputNeedsRestart = false;
     setLoading(false);
     setPlaying(false);
@@ -1523,10 +1274,10 @@ void PlaybackController::reset()
     // the new core starts at its own default volume
     try {
         m_core->setVolume(float(m_volume));
-    } catch (const SpotifyError &) {
+    } catch (const PlaybackError &) {
     }
     queueDidChange();
     syncMediaSession();
 }
 
-} // namespace swiftify
+} // namespace swifty

@@ -23,7 +23,7 @@
 #include <QQuickItem>
 #include <QtQml/qqmlregistration.h>
 
-namespace swiftify {
+namespace swifty {
 
 class AmbientClock;
 
@@ -94,4 +94,4 @@ private:
     QPointer<AmbientClock> m_followed;
 };
 
-} // namespace swiftify
+} // namespace swifty

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // a material menu, as end4 draws its popup menus: a surface-container card
 // with rounded items.
@@ -45,6 +46,7 @@ T.Menu {
 
     enter: Transition {
         NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Appearance.duration(150); easing.type: Easing.OutCubic }
+        NumberAnimation { property: "scale"; from: 0.6; to: 1; duration: Appearance.motion(420); easing.type: Easing.BezierSpline; easing.bezierCurve: Appearance.curves.expressiveFastSpatial }
     }
     exit: Transition {
         NumberAnimation { property: "opacity"; to: 0; duration: Appearance.duration(100) }
@@ -65,7 +67,7 @@ T.Menu {
         }
         implicitHeight: contentHeight
         model: root.contentModel
-        interactive: Window.window ? contentHeight + root.topPadding + root.bottomPadding > Window.window.height / Settings.zoom : false
+        interactive: Window.window ? contentHeight + root.topPadding + root.bottomPadding > Window.window.height : false
         clip: true
         currentIndex: root.currentIndex
         spacing: 2

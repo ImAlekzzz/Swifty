@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // a button that is a material shape rather than a rounded box: it morphs to
 // `morphTo` while `morphed`, can turn with the shared spin, and squishes
@@ -45,8 +46,6 @@ T.AbstractButton {
 
     padding: 0
     hoverEnabled: true
-    // click focus would let other mouse buttons grab and press it
-    focusPolicy: Qt.TabFocus
     opacity: enabled ? 1 : 0.38
     scale: down ? 0.88 : 1
 

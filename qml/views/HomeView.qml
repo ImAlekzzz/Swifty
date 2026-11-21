@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,10 +21,11 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Effects
-import Swiftify
+import Swifty
 
 // Listen Now (MusicHomeView)
 Flickable {
+    WheelScroll {}
     id: root
 
     // pages run up under the top bar, which floats over them with no
@@ -76,7 +78,7 @@ Flickable {
             spacing: 6
 
             TitleText {
-                text: "Swiftify"
+                text: "Swifty"
                 font.pixelSize: Appearance.fontSize.display
                 font.weight: Font.Bold
                 font.letterSpacing: -0.8
@@ -102,7 +104,7 @@ Flickable {
                 }
                 StyledText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: [qsTr("Good morning"), qsTr("Good afternoon"), qsTr("Good evening"), qsTr("Up late...")][greeting.part]
+                    text: ["Good morning", "Good afternoon", "Good evening", "Up late..."][greeting.part]
                           + "."
                     color: Appearance.colors.onSurfaceVariant
                 }
@@ -113,18 +115,51 @@ Flickable {
             }
         }
 
-        Item {
-            width: root.width
-            height: 220
-            Reveal.shown: Library.loadingHome && Library.recentlyPlayed.count === 0
+        // no music added yet: the same pickers as in the settings, up front
+        Rectangle {
+            id: firstRun
+
+            x: root.margin
+            width: Math.min(root.width - 2 * root.margin, 640)
+            height: prompt.implicitHeight + 56
+            visible: LocalFiles.sources.length === 0
+            radius: 28
+            color: Appearance.colors.surfaceContainerLow
+
+            MusicPicker {
+                id: firstRunPicker
+            }
 
             Column {
+                id: prompt
                 anchors.centerIn: parent
-                spacing: 12
-                LoadingSpinner { anchors.horizontalCenter: parent.horizontalCenter }
-                StyledText {
-                    text: qsTr("Loading your music…")
-                    color: Appearance.colors.onSurfaceVariant
+                width: parent.width - 48
+                spacing: 18
+
+                EmptyState {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    symbol: "folder_open"
+                    title: "Add your music"
+                    description: "Choose a folder of music, or a few files. Each song's title, artist, album and cover come from its own tags."
+                }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 12
+
+                    TextButton {
+                        implicitHeight: 48
+                        wavy: true
+                        symbol: "create_new_folder"
+                        text: "Add Folder"
+                        onClicked: firstRunPicker.pickFolder()
+                    }
+                    TextButton {
+                        implicitHeight: 48
+                        variant: TextButton.Outlined
+                        symbol: "audio_file"
+                        text: "Add Files"
+                        onClicked: firstRunPicker.pickFiles()
+                    }
                 }
             }
         }
@@ -138,7 +173,7 @@ Flickable {
             width: root.width - 2 * root.margin
             height: stacked ? spotlightArt.height + spotlightDetails.implicitHeight + 3 * inset
                             : Math.max(spotlightArt.height, spotlightDetails.implicitHeight) + 2 * inset
-            Reveal.shown: root.hasSpotlight && !(Library.loadingHome && Library.recentlyPlayed.count === 0)
+            Reveal.shown: root.hasSpotlight
             radius: 22
             color: Appearance.colors.surfaceContainerLow
             border.width: 0.75
@@ -238,7 +273,7 @@ Flickable {
                 StyledText {
                     width: parent.width
                     elide: Text.ElideRight
-                    text: root.spotlightIsCurrent && Player.playing ? qsTr("NOW PLAYING") : qsTr("CONTINUE LISTENING")
+                    text: root.spotlightIsCurrent && Player.playing ? "NOW PLAYING" : "CONTINUE LISTENING"
                     font.pixelSize: parent.width < 180 ? Appearance.fontSize.smallest : Appearance.fontSize.smaller
                     font.weight: Font.Bold
                     font.letterSpacing: 0.7
@@ -303,9 +338,9 @@ Flickable {
                         id: resumeLabel
                         visible: resume.width >= 176
                         anchors.verticalCenter: parent.verticalCenter
-                        width: Math.ceil(Math.max(labelMetrics.advanceWidth(qsTr("Pause")), labelMetrics.advanceWidth(qsTr("Resume")),
-                                                  labelMetrics.advanceWidth(qsTr("Play"))))
-                        text: root.spotlightIsCurrent ? (Player.playing ? qsTr("Pause") : qsTr("Resume")) : qsTr("Play")
+                        width: Math.ceil(Math.max(labelMetrics.advanceWidth("Pause"), labelMetrics.advanceWidth("Resume"),
+                                                  labelMetrics.advanceWidth("Play")))
+                        text: root.spotlightIsCurrent ? (Player.playing ? "Pause" : "Resume") : "Play"
                         font.pixelSize: Appearance.fontSize.normal
                         font.weight: Font.DemiBold
                         animateChange: true
@@ -336,15 +371,14 @@ Flickable {
             x: root.margin
             width: root.width - 2 * root.margin
             spacing: 12
-            Reveal.shown: !(Library.loadingHome && Library.recentlyPlayed.count === 0)
 
             readonly property bool sideBySide: width >= 520
 
             HomeShortcut {
                 width: parent.sideBySide ? (parent.width - 12) / 2 : parent.width
-                title: qsTr("Favourite Songs")
-                // spotify's count, until the list itself has loaded
-                subtitle: Library.savedSongTotal >= 0 ? qsTr("Favourited: %1").arg(Library.savedSongTotal) : qsTr("Made for repeat")
+                title: "Favourite Songs"
+                // the count, until the list itself has loaded
+                subtitle: Library.savedSongTotal >= 0 ? Library.savedSongTotal + " favourited" : "Made for repeat"
                 symbol: "star"
                 iconShape: "heart"
                 keepsShape: true
@@ -352,22 +386,20 @@ Flickable {
             }
             HomeShortcut {
                 width: parent.sideBySide ? (parent.width - 12) / 2 : parent.width
-                title: qsTr("Your Playlists")
-                subtitle: qsTr("Collections to explore: %1").arg(Library.playlists.count)
+                title: "Your Playlists"
+                subtitle: Library.playlists.count + " collections to explore"
                 symbol: "library_music"
                 iconShape: "bun"
                 onClicked: Library.showPlaylists()
             }
         }
 
-
-
         Shelf {
             width: root.width
             onScreen: root.reaches(column.y + y, height, 0)
             nearScreen: root.reaches(column.y + y, height, root.height / 2)
             Reveal.shown: Library.pinnedPlaylists.count > 0
-            title: qsTr("Pinned Playlists")
+            title: "Pinned Playlists"
             symbol: "push_pin"
             iconShape: "flower"
             showsSeeAll: true
@@ -377,7 +409,6 @@ Flickable {
                 required property int index
                 readonly property playlist playlist: Library.pinnedPlaylists.at(index)
                 artworkUrl: playlist.artworkUrl
-                fallbackKey: playlist.id.length > 0 ? playlist.id : playlist.name
                 title: playlist.name
                 subtitle: playlist.ownerDisplayName
                 onClicked: Library.selectPlaylist(playlist)
@@ -389,7 +420,7 @@ Flickable {
             onScreen: root.reaches(column.y + y, height, 0)
             nearScreen: root.reaches(column.y + y, height, root.height / 2)
             Reveal.shown: Library.playlists.count > 0
-            title: qsTr("Your Playlists")
+            title: "Your Playlists"
             symbol: "queue_music"
             iconShape: "bun"
             showsSeeAll: true
@@ -399,7 +430,6 @@ Flickable {
                 required property int index
                 readonly property playlist playlist: Library.playlists.at(index)
                 artworkUrl: playlist.artworkUrl
-                fallbackKey: playlist.id.length > 0 ? playlist.id : playlist.name
                 title: playlist.name
                 subtitle: playlist.ownerDisplayName
                 onClicked: Library.selectPlaylist(playlist)
@@ -410,8 +440,30 @@ Flickable {
             width: root.width
             onScreen: root.reaches(column.y + y, height, 0)
             nearScreen: root.reaches(column.y + y, height, root.height / 2)
+            Reveal.shown: Library.mostPlayed.count > 0
+            title: "Most Played"
+            symbol: "trending_up"
+            iconShape: "cookie9"
+            model: Library.mostPlayed
+            delegate: MediaCard {
+                required property int index
+                required property song song
+                artworkUrl: song.artworkUrl
+                title: song.name
+                subtitle: song.artists + " · " + Library.playCountOf(song.uri) + " plays"
+                current: Player.hasSong && Player.currentSong.instanceId === song.instanceId
+                badgeSymbol: current && Player.playing ? "graphic_eq" : "play_arrow"
+                onClicked: Player.playFromModel(Library.mostPlayed, index)
+                onSecondaryClicked: SongMenus.open(song, false)
+            }
+        }
+
+        Shelf {
+            width: root.width
+            onScreen: root.reaches(column.y + y, height, 0)
+            nearScreen: root.reaches(column.y + y, height, root.height / 2)
             Reveal.shown: Library.recentlyPlayed.count > 0
-            title: qsTr("Recently Played")
+            title: "Recently Played"
             symbol: "history"
             iconShape: "clamShell"
             model: Library.recentlyPlayed
@@ -433,7 +485,7 @@ Flickable {
             onScreen: root.reaches(column.y + y, height, 0)
             nearScreen: root.reaches(column.y + y, height, root.height / 2)
             Reveal.shown: Library.recommendedArtists.count > 0
-            title: qsTr("Artists in Your Rotation")
+            title: "Artists in Your Rotation"
             symbol: "person"
             iconShape: "cookie12"
             model: Math.min(10, Library.recommendedArtists.count)
@@ -454,7 +506,7 @@ Flickable {
             onScreen: root.reaches(column.y + y, height, 0)
             nearScreen: root.reaches(column.y + y, height, root.height / 2)
             Reveal.shown: Library.recommendedAlbums.count > 0
-            title: qsTr("Albums From Your Listening")
+            title: "Albums From Your Listening"
             symbol: "album"
             iconShape: "sunny"
             model: Math.min(10, Library.recommendedAlbums.count)
@@ -472,7 +524,7 @@ Flickable {
             width: root.width
             onScreen: root.reaches(column.y + y, height, 0)
             nearScreen: root.reaches(column.y + y, height, root.height / 2)
-            title: qsTr("Explore Genres")
+            title: "Explore Genres"
             symbol: "explore"
             iconShape: "clover8"
             rowHeight: 120

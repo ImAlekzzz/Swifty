@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +32,7 @@
 #include <cmath>
 #include <utility>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
@@ -278,15 +279,6 @@ void SpectrumItem::setWave(bool wave)
     }
 }
 
-void SpectrumItem::setContinuous(bool continuous)
-{
-    if (m_continuous != continuous) {
-        m_continuous = continuous;
-        rebuildStyle();
-        emit styleChanged();
-    }
-}
-
 void SpectrumItem::setSensitivity(qreal sensitivity)
 {
     if (m_sensitivity != sensitivity) {
@@ -337,7 +329,7 @@ void SpectrumItem::rebuildStyle()
 {
     switch (m_kind) {
     case Kind::Compact: m_style = SpectrumStyle::compact(float(height() > 0 ? height() : 34)); break;
-    case Kind::Immersive: m_style = m_continuous ? SpectrumStyle::continuous() : SpectrumStyle::immersive(); break;
+    case Kind::Immersive: m_style = SpectrumStyle::immersive(); break;
     case Kind::Ring: m_style = SpectrumStyle::ring(); break;
     case Kind::Equalizer: m_style = SpectrumStyle::equalizer(); break;
     }
@@ -1006,4 +998,4 @@ QSGNode *SpectrumItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     return root;
 }
 
-} // namespace swiftify
+} // namespace swifty

@@ -19,7 +19,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // end4's RippleButton: a state-layer background that tints on hover, ripples on
 // press and can be toggled. right and middle clicks are reported separately.

@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import Qt.labs.platform as Platform
-import Swiftify
+import Swifty
 
 // the mac's menu bar for the main window. its key equivalents are the app's
 // shortcuts, so on macos the window's own Shortcuts for these stand down
@@ -33,108 +34,99 @@ Platform.MenuBar {
     signal minimizeRequested()
     signal zoomRequested()
     signal showWindowRequested()
-    signal catalogueSearchRequested()
 
     Platform.Menu {
-        title: qsTr("File")
+        title: "File"
 
         Platform.MenuItem {
-            text: qsTr("About Swiftify")
+            text: "About Swifty"
             role: Platform.MenuItem.AboutRole
             onTriggered: UiState.settingsRequested()
         }
         Platform.MenuItem {
-            text: qsTr("Settings…")
+            text: "Settings…"
             role: Platform.MenuItem.PreferencesRole
             shortcut: "Ctrl+,"
             onTriggered: UiState.settingsRequested()
         }
         Platform.MenuItem {
-            text: qsTr("Quit Swiftify")
+            text: "Quit Swifty"
             role: Platform.MenuItem.QuitRole
             shortcut: StandardKey.Quit
             onTriggered: App.quit()
         }
 
         Platform.MenuItem {
-            text: qsTr("New Playlist…")
+            text: "New Playlist…"
             shortcut: StandardKey.New
-            enabled: Session.libraryConnected
             onTriggered: UiState.beginCreatePlaylist()
         }
         Platform.MenuSeparator {}
         Platform.MenuItem {
-            text: qsTr("Close Window")
+            text: "Close Window"
             shortcut: StandardKey.Close
             onTriggered: root.closeWindowRequested()
         }
     }
 
     Platform.Menu {
-        title: qsTr("Edit")
+        title: "Edit"
 
         Platform.MenuItem {
-            text: qsTr("Find")
+            text: "Find"
             shortcut: StandardKey.Find
             onTriggered: root.findRequested()
         }
     }
 
     Platform.Menu {
-        title: qsTr("View")
+        title: "View"
 
         Platform.MenuItem {
-            text: qsTr("Home")
+            text: "Home"
             shortcut: "Ctrl+1"
             checkable: true
             checked: Library.page === Library.Page.Home
             onTriggered: Library.showHome()
         }
         Platform.MenuItem {
-            text: qsTr("Search")
+            text: "Search"
             shortcut: "Ctrl+2"
             checkable: true
             checked: Library.page === Library.Page.Search
             onTriggered: Library.showSearch()
         }
         Platform.MenuItem {
-            text: qsTr("Favourite Songs")
+            text: "Songs"
             shortcut: "Ctrl+3"
             checkable: true
             checked: Library.page === Library.Page.Songs
-            onTriggered: Library.showSavedSongs()
+            onTriggered: Library.showSongs()
         }
         Platform.MenuItem {
-            text: qsTr("Playlists")
+            text: "Playlists"
             shortcut: "Ctrl+4"
             checkable: true
-            checked: Library.page === Library.Page.Playlists
+            checked: Library.page === Library.Page.Playlists || Library.page === Library.Page.Favourites
             onTriggered: Library.showPlaylists()
         }
         Platform.MenuItem {
-            text: qsTr("Local Files")
+            text: "Albums"
             shortcut: "Ctrl+5"
             checkable: true
-            checked: Library.page === Library.Page.LocalFiles || Library.page === Library.Page.LocalTracks
-            onTriggered: Library.showLocalFiles()
-        }
-        Platform.MenuItem {
-            text: qsTr("Stats")
-            shortcut: "Ctrl+6"
-            checkable: true
-            checked: Library.page === Library.Page.Stats
-            onTriggered: Library.showStats()
+            checked: Library.page === Library.Page.Albums
+            onTriggered: Library.showAlbums()
         }
         Platform.MenuSeparator {}
         Platform.MenuItem {
-            text: qsTr("Back")
+            text: "Back"
             shortcut: StandardKey.Back
             enabled: Library.canGoBack
             onTriggered: Library.goBack()
         }
         Platform.MenuSeparator {}
         Platform.MenuItem {
-            text: qsTr("Lyrics")
+            text: "Lyrics"
             shortcut: "Ctrl+Alt+L"
             checkable: true
             checked: Player.showingLyrics
@@ -142,20 +134,15 @@ Platform.MenuBar {
             onTriggered: Player.toggleLyricsPanel()
         }
         Platform.MenuItem {
-            text: qsTr("Playing Next")
+            text: "Playing Next"
             shortcut: "Ctrl+Alt+Q"
             checkable: true
             checked: Player.showingQueue
             onTriggered: Player.toggleQueuePanel()
         }
-        Platform.MenuItem {
-            text: qsTr("Search Catalogue")
-            shortcut: "Ctrl+K"
-            onTriggered: root.catalogueSearchRequested()
-        }
         Platform.MenuSeparator {}
         Platform.MenuItem {
-            text: UiState.immersiveOpen ? qsTr("Close Immersive Player") : qsTr("Immersive Player")
+            text: UiState.immersiveOpen ? "Close Immersive Player" : "Immersive Player"
             shortcut: "Ctrl+Shift+F"
             enabled: Player.hasSong || UiState.immersiveOpen
             onTriggered: UiState.immersiveOpen = !UiState.immersiveOpen
@@ -163,60 +150,57 @@ Platform.MenuBar {
     }
 
     Platform.Menu {
-        title: qsTr("Controls")
+        title: "Controls"
 
         Platform.MenuItem {
-            text: Player.playing ? qsTr("Pause") : qsTr("Play")
+            text: Player.playing ? "Pause" : "Play"
             enabled: Player.hasSong
             onTriggered: Player.togglePlayback()
         }
         Platform.MenuItem {
-            text: qsTr("Next")
+            text: "Next"
             shortcut: "Ctrl+Right"
             enabled: Player.canSkipForward
             onTriggered: Player.skipForward()
         }
         Platform.MenuItem {
-            text: qsTr("Previous")
+            text: "Previous"
             shortcut: "Ctrl+Left"
             enabled: Player.canSkipBackward
             onTriggered: Player.skipBackward()
         }
         Platform.MenuSeparator {}
         Platform.MenuItem {
-            text: qsTr("Forward 10 Seconds")
+            text: "Forward 10 Seconds"
             shortcut: "Ctrl+Alt+Right"
             enabled: Player.hasSong
             onTriggered: Player.seekBy(10000)
         }
         Platform.MenuItem {
-            text: qsTr("Back 10 Seconds")
+            text: "Back 10 Seconds"
             shortcut: "Ctrl+Alt+Left"
             enabled: Player.hasSong
             onTriggered: Player.seekBy(-10000)
         }
         Platform.MenuSeparator {}
         Platform.MenuItem {
-            text: qsTr("Volume Up")
+            text: "Volume Up"
             shortcut: "Ctrl+Up"
-            enabled: Session.connected
             onTriggered: Player.adjustVolume(0.05)
         }
         Platform.MenuItem {
-            text: qsTr("Volume Down")
+            text: "Volume Down"
             shortcut: "Ctrl+Down"
-            enabled: Session.connected
             onTriggered: Player.adjustVolume(-0.05)
         }
         Platform.MenuItem {
-            text: Player.volume <= 0.01 ? qsTr("Unmute") : qsTr("Mute")
+            text: Player.volume <= 0.01 ? "Unmute" : "Mute"
             shortcut: "Ctrl+Alt+M"
-            enabled: Session.connected
             onTriggered: Player.toggleMute()
         }
         Platform.MenuSeparator {}
         Platform.MenuItem {
-            text: qsTr("Shuffle")
+            text: "Shuffle"
             shortcut: "Ctrl+Alt+S"
             checkable: true
             checked: Player.shuffle
@@ -224,8 +208,8 @@ Platform.MenuBar {
             onTriggered: Player.toggleShuffle()
         }
         Platform.MenuItem {
-            text: Player.repeatMode === Player.RepeatMode.One ? qsTr("Repeat: Song")
-                : Player.repeatMode === Player.RepeatMode.All ? qsTr("Repeat: Queue") : qsTr("Repeat: Off")
+            text: Player.repeatMode === Player.RepeatMode.One ? "Repeat: Song"
+                : Player.repeatMode === Player.RepeatMode.All ? "Repeat: Queue" : "Repeat: Off"
             shortcut: "Ctrl+Alt+R"
             enabled: Player.hasSong
             onTriggered: Player.cycleRepeatMode()
@@ -233,20 +217,20 @@ Platform.MenuBar {
     }
 
     Platform.Menu {
-        title: qsTr("Window")
+        title: "Window"
 
         Platform.MenuItem {
-            text: qsTr("Minimize")
+            text: "Minimize"
             shortcut: "Ctrl+M"
             onTriggered: root.minimizeRequested()
         }
         Platform.MenuItem {
-            text: qsTr("Zoom")
+            text: "Zoom"
             onTriggered: root.zoomRequested()
         }
         Platform.MenuSeparator {}
         Platform.MenuItem {
-            text: "Swiftify"
+            text: "Swifty"
             onTriggered: root.showWindowRequested()
         }
     }

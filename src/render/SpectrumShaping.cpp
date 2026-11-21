@@ -21,7 +21,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace swiftify::spectrum {
+namespace swifty::spectrum {
 
 QList<float> bassExpanded(const QList<float> &levels, int perSideCount)
 {
@@ -140,4 +140,4 @@ QColor color(const Rgba &value)
     return QColor::fromRgbF(value[0], value[1], value[2], value[3]);
 }
 
-} // namespace swiftify::spectrum
+} // namespace swifty::spectrum

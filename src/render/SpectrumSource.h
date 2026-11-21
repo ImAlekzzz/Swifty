@@ -29,7 +29,7 @@
 class QQmlEngine;
 class QJSEngine;
 
-namespace swiftify {
+namespace swifty {
 
 class PlaybackController;
 class PlaybackCore;
@@ -83,4 +83,4 @@ private:
     float m_loadingPhase = 0;
 };
 
-} // namespace swiftify
+} // namespace swifty

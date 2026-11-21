@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,10 +20,11 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
-import Swiftify
+import Swifty
 
 // Search (GlobalSearchView): categories and history when empty, results after.
 Flickable {
+    WheelScroll {}
     id: root
 
     // pages run up under the top bar, which floats over them with no
@@ -72,7 +74,7 @@ Flickable {
 
                 TitleText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Played from Search")
+                    text: "Played from Search"
                     font.pixelSize: Appearance.fontSize.title
                     font.weight: Font.Bold
                 }
@@ -80,7 +82,7 @@ Flickable {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     variant: TextButton.Text
-                    text: qsTr("Clear")
+                    text: "Clear"
                     onClicked: Library.clearSearchHistory()
                 }
             }
@@ -101,7 +103,7 @@ Flickable {
                 x: root.margin
                 topPadding: Library.searchHistory.count > 0 ? 26 : 0
                 bottomPadding: 18
-                text: qsTr("Browse Categories")
+                text: "Browse Categories"
                 font.pixelSize: 32
                 font.weight: Font.Bold
             }
@@ -153,23 +155,7 @@ Flickable {
                 }
                 StyledText {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: qsTr("You found it.")
-                    color: Appearance.colors.onSurfaceVariant
-                }
-            }
-        }
-
-        Item {
-            width: root.width
-            height: 280
-            Reveal.shown: !root.empty && !Library.searchIsCatchphrase && Library.searching
-
-            Column {
-                anchors.centerIn: parent
-                spacing: 12
-                LoadingSpinner { anchors.horizontalCenter: parent.horizontalCenter }
-                StyledText {
-                    text: qsTr("Searching Spotify…")
+                    text: "You found it."
                     color: Appearance.colors.onSurfaceVariant
                 }
             }
@@ -178,13 +164,13 @@ Flickable {
         Item {
             width: root.width
             height: 360
-            Reveal.shown: !root.empty && !Library.searchIsCatchphrase && !Library.searching && !Library.hasSearchResults
+            Reveal.shown: !root.empty && !Library.searchIsCatchphrase && !Library.hasSearchResults
 
             EmptyState {
                 anchors.centerIn: parent
                 symbol: "search_off"
-                title: qsTr("No Results for “%1”").arg(Library.searchQuery.trim())
-                description: qsTr("Check the spelling or try a new search.")
+                title: "No Results for “" + Library.searchQuery.trim() + "”"
+                description: "Check the spelling or try a new search."
             }
         }
 
@@ -192,14 +178,14 @@ Flickable {
         Column {
             id: results
             width: root.width
-            Reveal.shown: !root.empty && !Library.searchIsCatchphrase && !Library.searching && Library.hasSearchResults
+            Reveal.shown: !root.empty && !Library.searchIsCatchphrase && Library.hasSearchResults
             spacing: 0
 
             TitleText {
                 x: root.margin
                 Reveal.shown: Library.searchSongs.count > 0
                 bottomPadding: 10
-                text: qsTr("Songs")
+                text: "Songs"
                 font.pixelSize: Appearance.fontSize.title
                 font.weight: Font.Bold
             }
@@ -222,7 +208,7 @@ Flickable {
                 nearScreen: root.reaches(column.y + results.y + y, height, root.height / 2)
                 Reveal.shown: Library.searchAlbums.count > 0
                 topPadding: 28
-                title: qsTr("Albums")
+                title: "Albums"
                 symbol: "album"
                 iconShape: "sunny"
                 model: Library.searchAlbums
@@ -241,7 +227,7 @@ Flickable {
                 nearScreen: root.reaches(column.y + results.y + y, height, root.height / 2)
                 Reveal.shown: Library.searchArtists.count > 0
                 topPadding: 28
-                title: qsTr("Artists")
+                title: "Artists"
                 symbol: "person"
                 iconShape: "cookie12"
                 model: Library.searchArtists
@@ -262,14 +248,13 @@ Flickable {
                 nearScreen: root.reaches(column.y + results.y + y, height, root.height / 2)
                 Reveal.shown: Library.searchPlaylists.count > 0
                 topPadding: 28
-                title: qsTr("Playlists")
+                title: "Playlists"
                 symbol: "queue_music"
                 iconShape: "bun"
                 model: Library.searchPlaylists
                 delegate: MediaCard {
                     required property playlist playlist
                     artworkUrl: playlist.artworkUrl
-                    fallbackKey: playlist.id.length > 0 ? playlist.id : playlist.name
                     title: playlist.name
                     subtitle: playlist.ownerDisplayName
                     onClicked: Library.selectPlaylist(playlist)

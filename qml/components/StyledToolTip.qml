@@ -19,7 +19,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // a material plain tooltip. it sits above what it describes, clear of the
 // pointer, and flips below where there is no room above (tooltips are

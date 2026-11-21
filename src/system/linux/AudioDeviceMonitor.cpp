@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +19,8 @@
 
 #include "system/linux/AudioDeviceMonitor.h"
 
+#include "core/Diagnostics.h"
+
 #include <QLoggingCategory>
 #include <QMetaObject>
 
@@ -27,10 +30,11 @@
 #include <pulse/thread-mainloop.h>
 
 #include <cstdint>
+#include <cstdio>
 
-namespace swiftify {
+namespace swifty {
 
-Q_LOGGING_CATEGORY(lcDevices, "swiftify.devices")
+Q_LOGGING_CATEGORY(lcDevices, "swifty.devices")
 
 namespace {
 
@@ -60,7 +64,7 @@ AudioDeviceMonitor::AudioDeviceMonitor(QObject *parent)
     if (!m_mainloop) {
         return;
     }
-    m_context = pa_context_new(pa_threaded_mainloop_get_api(m_mainloop), "Swiftify");
+    m_context = pa_context_new(pa_threaded_mainloop_get_api(m_mainloop), "Swifty");
     if (!m_context) {
         return;
     }
@@ -155,6 +159,8 @@ void AudioDeviceMonitor::serverInfo(const pa_server_info *info)
     m_defaultChangedAt = QDateTime::currentDateTimeUtc();
     // a new default that is a device just plugged in may follow up with play.
     if (hadDefault) {
+        diagnostic("devices", QStringLiteral("the default output is now %1").arg(defaultSink));
+        emit defaultOutputChanged();
         notifyArrived();
     }
 }
@@ -200,7 +206,7 @@ void AudioDeviceMonitor::sinkInfo(const pa_sink_info *info, bool initial)
         notifyArrived();
     }
     if (portLost && isDefault) {
-        notifyLost();
+        notifyLost(QStringLiteral("the port of the default sink %1 became unavailable").arg(current.name));
     }
 }
 
@@ -216,12 +222,13 @@ void AudioDeviceMonitor::sinkRemoved(uint32_t index)
         || (name == m_previousDefaultSink && m_defaultChangedAt.isValid()
             && m_defaultChangedAt.msecsTo(QDateTime::currentDateTimeUtc()) < kDefaultHandoverMs);
     if (wasPlayingHere) {
-        notifyLost();
+        notifyLost(QStringLiteral("the sink %1 was removed (default now \"%2\")").arg(name, m_defaultSink));
     }
 }
 
-void AudioDeviceMonitor::notifyLost()
+void AudioDeviceMonitor::notifyLost(const QString &why)
 {
+    diagnostic("devices", QStringLiteral("the output counts as lost, so playback pauses: %1").arg(why));
     QMetaObject::invokeMethod(this, &AudioDeviceMonitor::outputLost, Qt::QueuedConnection);
 }
 
@@ -230,4 +237,4 @@ void AudioDeviceMonitor::notifyArrived()
     QMetaObject::invokeMethod(this, &AudioDeviceMonitor::outputArrived, Qt::QueuedConnection);
 }
 
-} // namespace swiftify
+} // namespace swifty

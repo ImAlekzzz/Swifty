@@ -23,7 +23,7 @@
 
 #include <algorithm>
 
-namespace swiftify {
+namespace swifty {
 
 /// sizes the immersive player from its window (ImmersivePlayerLayout.swift).
 /// the spectrum's room is set aside before the artwork is sized, so a short
@@ -84,4 +84,4 @@ private:
     bool m_circular = false;
 };
 
-} // namespace swiftify
+} // namespace swifty

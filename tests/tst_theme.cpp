@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,7 +33,7 @@
 #include <QTest>
 #include <QUrl>
 
-using namespace swiftify;
+using namespace swifty;
 
 namespace {
 
@@ -112,7 +113,7 @@ private slots:
     {
         QFETCH(bool, dark);
         QTemporaryDir directory;
-        Settings settings(directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(directory.filePath(QStringLiteral("swifty.conf")));
         settings.setThemeMode(dark ? QStringLiteral("dark") : QStringLiteral("light"));
         Theme theme(&settings);
         const themes::Family *spotify = themes::find(QStringLiteral("spotify"));
@@ -155,7 +156,7 @@ private slots:
     void readsAndFollowsTheMatugenFile()
     {
         QTemporaryDir directory;
-        Settings settings(directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(directory.filePath(QStringLiteral("swifty.conf")));
         settings.setThemeSource(QStringLiteral("system"));
         const QString path = directory.filePath(QStringLiteral("colors.json"));
         settings.setMatugenColorsPath(path);
@@ -245,7 +246,7 @@ private slots:
         QVERIFY(writeJson(config + QStringLiteral("/colors.json"), "{\"primary\": \"#123456\"}"));
         // Even valid-looking input templates must never override generated output.
         QVERIFY(writeJson(config + QStringLiteral("/templates/colors.json"), matugenJson(red)));
-        Settings settings(paths.directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(paths.directory.filePath(QStringLiteral("swifty.conf")));
         settings.setThemeSource(QStringLiteral("system"));
         Theme theme(&settings);
         QVERIFY(theme.usingSystemScheme());
@@ -262,57 +263,6 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(theme.systemSchemePath(), cached, 3000);
     }
 
-    void findsDankMaterialShellsScheme()
-    {
-        MatugenPaths paths;
-        const auto green = Theme::rolesFromSeed(Qt::green, true, false);
-        const auto red = Theme::rolesFromSeed(Qt::red, true, false);
-        const auto blue = Theme::rolesFromSeed(Qt::blue, true, false);
-        const auto modes = [](const MaterialScheme::Roles &roles) {
-            // as dms writes it: the matugen roles by mode under colors,
-            // beside its terminal palette
-            const QJsonObject scheme = QJsonDocument::fromJson(matugenJson(roles)).object();
-            return QJsonDocument(QJsonObject{{"colors", QJsonObject{{"dark", scheme}, {"light", scheme}}},
-                                             {"dank16", QJsonObject{{"color0", QJsonObject{{"dark", "#000000"}}}}},
-                                             {"mode", "dark"}})
-                .toJson();
-        };
-        const QString dms = paths.directory.filePath(QStringLiteral("cache/DankMaterialShell/dms-colors.json"));
-        QVERIFY(writeJson(dms, modes(green)));
-        // its other caches are never taken for a scheme
-        QVERIFY(writeJson(paths.directory.filePath(QStringLiteral("cache/DankMaterialShell/cache.json")), matugenJson(blue)));
-        // and it comes before a scheme in matugen's own folders
-        QVERIFY(writeJson(paths.directory.filePath(QStringLiteral("config/matugen/colors.json")), matugenJson(red)));
-        Settings settings(paths.directory.filePath(QStringLiteral("swiftify.conf")));
-        settings.setThemeSource(QStringLiteral("system"));
-        settings.setThemeMode(QStringLiteral("dark"));
-        Theme theme(&settings);
-        QVERIFY(theme.usingSystemScheme());
-        QCOMPARE(theme.systemSchemePath(), dms);
-        QCOMPARE(theme.colors()->primary(), green[std::size_t(MaterialScheme::Role::Primary)]);
-        // a new wallpaper rewrites it, and the theme follows
-        QVERIFY(writeJson(dms, modes(blue)));
-        QTRY_COMPARE_WITH_TIMEOUT(theme.colors()->primary(), blue[std::size_t(MaterialScheme::Role::Primary)], 3000);
-    }
-
-    void dankMaterialShellsSchemeIsFoundOnceItAppears()
-    {
-        MatugenPaths paths;
-        const auto green = Theme::rolesFromSeed(Qt::green, true, false);
-        const auto red = Theme::rolesFromSeed(Qt::red, true, false);
-        QDir().mkpath(paths.directory.filePath(QStringLiteral("cache/DankMaterialShell")));
-        QVERIFY(writeJson(paths.directory.filePath(QStringLiteral("config/matugen/colors.json")), matugenJson(red)));
-        Settings settings(paths.directory.filePath(QStringLiteral("swiftify.conf")));
-        settings.setThemeSource(QStringLiteral("system"));
-        Theme theme(&settings);
-        QCOMPARE(theme.colors()->primary(), red[std::size_t(MaterialScheme::Role::Primary)]);
-        // dms writing its scheme for the first time, after swiftify started
-        const QString dms = paths.directory.filePath(QStringLiteral("cache/DankMaterialShell/dms-colors.json"));
-        QVERIFY(writeJson(dms, matugenJson(green)));
-        QTRY_COMPARE_WITH_TIMEOUT(theme.systemSchemePath(), dms, 3000);
-        QCOMPARE(theme.colors()->primary(), green[std::size_t(MaterialScheme::Role::Primary)]);
-    }
-
     void explicitFilesOverrideDiscoveryAndModesCanChange()
     {
         MatugenPaths paths;
@@ -324,7 +274,7 @@ private slots:
         const QJsonObject modes{{"colors", QJsonObject{{"dark", QJsonDocument::fromJson(matugenJson(night)).object()},
                                                       {"light", QJsonDocument::fromJson(matugenJson(day)).object()}}}};
         QVERIFY(writeJson(custom, QJsonDocument(modes).toJson()));
-        Settings settings(paths.directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(paths.directory.filePath(QStringLiteral("swifty.conf")));
         settings.setThemeSource(QStringLiteral("system"));
         settings.setThemeMode(QStringLiteral("dark"));
         settings.setMatugenColorsPath(QUrl::fromLocalFile(custom).toString());
@@ -360,7 +310,7 @@ private slots:
     void fallsBackWhenTheFileIsMissingOrIncomplete()
     {
         QTemporaryDir directory;
-        Settings settings(directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(directory.filePath(QStringLiteral("swifty.conf")));
         settings.setThemeSource(QStringLiteral("system"));
         const QString path = directory.filePath(QStringLiteral("colors.json"));
         settings.setMatugenColorsPath(path);
@@ -416,7 +366,7 @@ private slots:
     void aThemeFollowsTheMode()
     {
         QTemporaryDir directory;
-        Settings settings(directory.filePath(QStringLiteral("swiftify.conf")));
+        Settings settings(directory.filePath(QStringLiteral("swifty.conf")));
         settings.setThemeSource(QStringLiteral("catppuccin-mocha"));
         settings.setThemeMode(QStringLiteral("dark"));
         Theme theme(&settings);

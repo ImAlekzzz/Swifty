@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,7 +27,7 @@
 
 class QWindow;
 
-namespace swiftify {
+namespace swifty {
 
 class PlaybackController;
 class Theme;
@@ -44,19 +45,16 @@ public:
     bool nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
-    void handleMediaButton(int button);
-
 private:
     struct Native;
 
     void attachWindow();
     void styleWindow();
     void initializeTaskbar();
-    void updateButtons();
-    void updateProgress();
     void initializeMediaControls();
     void updateMediaControls();
-    void updateMediaMetadata();
+    void updateButtons();
+    void updateProgress();
 
     PlaybackController *m_player;
     Theme *m_theme;
@@ -64,4 +62,4 @@ private:
     std::unique_ptr<Native> m_native;
 };
 
-} // namespace swiftify
+} // namespace swifty

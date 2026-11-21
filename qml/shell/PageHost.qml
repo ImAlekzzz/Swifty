@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // the pages, one for each step of the library's back history
 // (Library.historyDepth). going on keeps the page left behind, hidden and
@@ -39,20 +40,17 @@ Item {
     readonly property Item currentPage: slots.length > 0 ? slots[slots.length - 1].view : null
 
     function componentFor(page: int): Component {
-        if (UiState.needsSetup) {
-            return setupPage
-        }
         switch (page) {
         case Library.Page.Search: return searchPage
-        case Library.Page.Songs: return savedPage
+        case Library.Page.Songs: return songsPage
+        case Library.Page.Favourites: return savedPage
         case Library.Page.Playlists: return playlistsPage
         case Library.Page.PinnedPlaylists: return pinnedPage
         case Library.Page.Playlist: return playlistPage
         case Library.Page.Album: return albumPage
         case Library.Page.Artist: return artistPage
-        case Library.Page.LocalFiles: return localFilesPage
-        case Library.Page.LocalTracks: return localTracksPage
-        case Library.Page.Stats: return statsPage
+        case Library.Page.Albums: return albumsPage
+        case Library.Page.Artists: return artistsPage
         default: return homePage
         }
     }
@@ -186,11 +184,6 @@ Item {
         target: Library
         function onDestinationChanged() { root.sync() }
     }
-    Connections {
-        target: UiState
-        // every page changes between setup and the library
-        function onNeedsSetupChanged() { root.rebuild(Library.historyDepth + 1) }
-    }
 
     Component {
         id: slotComponent
@@ -214,16 +207,15 @@ Item {
         }
     }
 
-    Component { id: setupPage; SetupView {} }
     Component { id: homePage; HomeView {} }
     Component { id: searchPage; SearchView {} }
     Component { id: savedPage; SavedSongsView {} }
+    Component { id: songsPage; AllSongsView {} }
     Component { id: playlistsPage; PlaylistsView {} }
     Component { id: pinnedPage; PlaylistsView { pinnedOnly: true } }
     Component { id: playlistPage; PlaylistView {} }
     Component { id: albumPage; AlbumView {} }
     Component { id: artistPage; ArtistView {} }
-    Component { id: localFilesPage; LocalFilesView {} }
-    Component { id: localTracksPage; LocalTracksView {} }
-    Component { id: statsPage; StatsView {} }
+    Component { id: albumsPage; AlbumsView {} }
+    Component { id: artistsPage; ArtistsView {} }
 }

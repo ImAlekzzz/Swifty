@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
-import Swiftify
+import Swifty
 
 // the navigation drawer (MusicSidebar): destinations, the two playlist groups
 // and the account. the list of every playlist is virtualized, so a library of
@@ -28,14 +29,14 @@ Item {
     id: root
 
     property playlist menuPlaylist
-    readonly property bool menuPlaylistEditable: menuPlaylist.isLocal || menuPlaylist.isCollaborative
-        || (Library.profileId.length > 0 && menuPlaylist.ownerId === Library.profileId)
+    readonly property bool menuPlaylistEditable: menuPlaylist.isLocal
 
     function isSelected(page: int): bool {
         return Library.page === page
     }
 
     ListView {
+        WheelScroll {}
         id: list
         anchors.fill: parent
         anchors.bottomMargin: settingsButton.height + 16
@@ -54,7 +55,7 @@ Item {
 
             NavigationItem {
                 width: parent.width
-                text: qsTr("Home")
+                text: "Home"
                 iconShape: "cookie9"
                 symbol: "home"
                 selected: root.isSelected(Library.Page.Home)
@@ -62,7 +63,7 @@ Item {
             }
             NavigationItem {
                 width: parent.width
-                text: qsTr("Search")
+                text: "Search"
                 iconShape: "clover4"
                 symbol: "search"
                 selected: root.isSelected(Library.Page.Search)
@@ -71,40 +72,36 @@ Item {
 
             SectionLabel {
                 width: parent.width
-                text: qsTr("Library")
+                text: "Library"
             }
             NavigationItem {
                 width: parent.width
-                text: qsTr("Songs")
-                iconShape: "heart"
-                keepsShape: true
+                text: "Songs"
+                iconShape: "cookie12"
                 symbol: "music_note"
                 selected: root.isSelected(Library.Page.Songs)
-                onClicked: Library.showSavedSongs()
+                onClicked: Library.showSongs()
             }
             NavigationItem {
                 width: parent.width
-                text: qsTr("Local Files")
+                text: "Albums"
                 iconShape: "clamShell"
-                symbol: "folder_open"
-                // and everything that opens from it: every file, and the
-                // playlists made of them
-                selected: root.isSelected(Library.Page.LocalFiles) || root.isSelected(Library.Page.LocalTracks)
-                          || (root.isSelected(Library.Page.Playlist) && Library.selectedPlaylist.isLocal)
-                onClicked: Library.showLocalFiles()
+                symbol: "album"
+                selected: root.isSelected(Library.Page.Albums)
+                onClicked: Library.showAlbums()
             }
             NavigationItem {
                 width: parent.width
-                text: qsTr("Stats")
-                iconShape: "softBurst"
-                symbol: "insights"
-                selected: root.isSelected(Library.Page.Stats)
-                onClicked: Library.showStats()
+                text: "Artists"
+                iconShape: "puffy"
+                symbol: "person"
+                selected: root.isSelected(Library.Page.Artists)
+                onClicked: Library.showArtists()
             }
 
             SectionLabel {
                 width: parent.width
-                text: qsTr("Playlists")
+                text: "Playlists"
                 trailing: IconButton {
                     symbol: "add"
                     size: 32
@@ -112,13 +109,22 @@ Item {
                     iconColor: Appearance.colors.primary
                     onClicked: UiState.beginCreatePlaylist()
 
-                    tooltip: qsTr("New playlist")
+                    tooltip: "New playlist"
                 }
             }
 
             NavigationItem {
                 width: parent.width
-                text: qsTr("Pinned Playlists")
+                text: "Favourite Songs"
+                iconShape: "heart"
+                keepsShape: true
+                symbol: "favorite"
+                selected: root.isSelected(Library.Page.Favourites)
+                onClicked: Library.showSavedSongs()
+            }
+            NavigationItem {
+                width: parent.width
+                text: "Pinned Playlists"
                 iconShape: "flower"
                 symbol: "push_pin"
                 selected: root.isSelected(Library.Page.PinnedPlaylists)
@@ -135,7 +141,6 @@ Item {
                     }
                 }
             }
-
 
             // the pinned group opens and shuts on a spring: past its height
             // and back opening, and a rebound shutting
@@ -164,7 +169,7 @@ Item {
                         Reveal.shown: Library.pinnedPlaylists.count === 0
                         leftPadding: 28
                         height: 28
-                        text: qsTr("No playlists")
+                        text: "No playlists"
                         font.pixelSize: Appearance.fontSize.smaller
                         color: Appearance.colors.onSurfaceVariant
                     }
@@ -181,7 +186,7 @@ Item {
 
             NavigationItem {
                 width: parent.width
-                text: qsTr("All Playlists")
+                text: "All Playlists"
                 iconShape: "bun"
                 symbol: "grid_view"
                 selected: root.isSelected(Library.Page.Playlists)
@@ -203,7 +208,7 @@ Item {
                 Reveal.shown: Settings.allPlaylistsExpanded && Library.playlists.count === 0
                 leftPadding: 28
                 height: 28
-                text: qsTr("No playlists")
+                text: "No playlists"
                 font.pixelSize: Appearance.fontSize.smaller
                 color: Appearance.colors.onSurfaceVariant
             }
@@ -280,7 +285,6 @@ Item {
         text: playlist.name
         showArtwork: true
         artworkUrl: playlist.artworkUrl
-        fallbackKey: playlist.id.length > 0 ? playlist.id : playlist.name
         indent: 12
         selected: Library.page === Library.Page.Playlist && Library.selectedPlaylistId === playlist.id
         onClicked: Library.selectPlaylist(item.playlist)
@@ -307,7 +311,7 @@ Item {
             StyledMenuItem {
                 id: pinItem
                 readonly property bool pinned: Library.pinsRevision >= 0 && Library.isPinned(root.menuPlaylist.id)
-                text: pinned ? qsTr("Unpin Playlist") : qsTr("Pin Playlist")
+                text: pinned ? "Unpin Playlist" : "Pin Playlist"
                 symbol: pinned ? "keep_off" : "keep"
                 onTriggered: {
                     if (!pinItem.pinned) {
@@ -323,7 +327,7 @@ Item {
             StyledMenuItem {
                 visible: root.menuPlaylistEditable
                 height: visible ? implicitHeight : 0
-                text: qsTr("Delete Playlist")
+                text: "Delete Playlist"
                 symbol: "delete"
                 destructive: true
                 onTriggered: UiState.deletePlaylistRequested(root.menuPlaylist)
@@ -338,7 +342,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 8
-        text: qsTr("Settings")
+        text: "Settings"
         iconShape: "cookie12"
         symbol: "settings"
         onClicked: UiState.settingsRequested()

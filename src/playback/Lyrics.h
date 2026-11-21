@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,7 +25,7 @@
 
 #include <optional>
 
-namespace swiftify {
+namespace swifty {
 
 struct LyricLine {
     quint32 startTimeMs = 0;
@@ -32,7 +33,7 @@ struct LyricLine {
     QString words;
 };
 
-/// spotify's color-lyrics, as the core returns them (SpotifyLyrics.swift)
+/// the lyrics of a song: synchronized lines from a .lrc file, or plain text
 struct Lyrics {
     QString language;
     QString provider;
@@ -44,6 +45,8 @@ struct Lyrics {
     static std::optional<Lyrics> fromLrc(const QString &text);
     /// the .lrc kept beside a music file, with the same name
     static std::optional<Lyrics> besideFile(const QString &musicPath);
+    /// the lyrics kept in the file's own tags (id3, vorbis comments, mp4)
+    static std::optional<Lyrics> embedded(const QString &musicPath);
     /// the line playing at `positionMs`, by binary search. -1 before the first
     /// line, and always for unsynchronised lyrics.
     int lineIndex(quint32 positionMs) const;
@@ -80,4 +83,4 @@ private:
     QList<LyricLine> m_lines;
 };
 
-} // namespace swiftify
+} // namespace swifty

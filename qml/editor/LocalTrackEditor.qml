@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Dialogs
-import Swiftify
+import Swifty
 
 // what a music file of one's own says about itself, written into the file:
 // its cover (a photo framed in the cropper, or none), title, artists, album,
@@ -78,7 +79,7 @@ StyledDialog {
         }, pickedCover ?? new ArrayBuffer(0), removingCover && pickedCover === null)
     }
 
-    headline: qsTr("Edit Info")
+    headline: "Edit Info"
     symbol: "edit_note"
     iconShape: "puffy"
     preferredWidth: 480
@@ -92,7 +93,7 @@ StyledDialog {
             }
             root.saving = false
             if (ok) {
-                UiState.toastRequested(qsTr("Saved to the file"))
+                UiState.toastRequested("Saved to the file")
                 root.accept()
             } else {
                 root.problem = error
@@ -106,7 +107,7 @@ StyledDialog {
 
     FileDialog {
         id: picker
-        title: qsTr("Choose Cover Art")
+        title: "Choose Cover Art"
         nameFilters: ["Images (*.png *.jpg *.jpeg *.webp *.gif *.bmp *.tif *.tiff *.avif *.heic)"]
         onAccepted: {
             maker.photo = selectedFile
@@ -114,7 +115,7 @@ StyledDialog {
                 root.problem = ""
                 cropper.begin()
             } else {
-                root.problem = qsTr("That image could not be used as cover art.")
+                root.problem = "That image could not be used as cover art."
             }
         }
     }
@@ -185,13 +186,13 @@ StyledDialog {
                 variant: TextButton.Tonal
                 symbol: "add_photo_alternate"
                 text: root.pickedCover !== null || (root.currentCover.toString().length > 0 && !root.removingCover)
-                      ? qsTr("Change Cover…") : qsTr("Add Cover…")
+                      ? "Change Cover…" : "Add Cover…"
                 onClicked: picker.open()
             }
             TextButton {
                 variant: TextButton.Text
                 symbol: "hide_image"
-                text: qsTr("Remove Cover")
+                text: "Remove Cover"
                 visible: root.pickedCover !== null || (root.currentCover.toString().length > 0 && !root.removingCover)
                 onClicked: {
                     root.pickedCover = null
@@ -213,28 +214,28 @@ StyledDialog {
     OutlinedTextField {
         id: titleField
         width: parent.width
-        placeholder: qsTr("Title")
+        placeholder: "Title"
         onAccepted: root.save()
     }
 
     OutlinedTextField {
         id: artistField
         width: parent.width
-        placeholder: qsTr("Artist")
+        placeholder: "Artist"
         onAccepted: root.save()
     }
 
     OutlinedTextField {
         id: albumField
         width: parent.width
-        placeholder: qsTr("Album")
+        placeholder: "Album"
         onAccepted: root.save()
     }
 
     OutlinedTextField {
         id: albumArtistField
         width: parent.width
-        placeholder: qsTr("Album Artist")
+        placeholder: "Album Artist"
         onAccepted: root.save()
     }
 
@@ -245,13 +246,13 @@ StyledDialog {
         OutlinedTextField {
             id: genreField
             width: (parent.width - parent.spacing) / 2
-            placeholder: qsTr("Genre")
+            placeholder: "Genre"
             onAccepted: root.save()
         }
         OutlinedTextField {
             id: dateField
             width: (parent.width - parent.spacing) / 2
-            placeholder: qsTr("Year")
+            placeholder: "Year"
             onAccepted: root.save()
         }
     }
@@ -263,14 +264,14 @@ StyledDialog {
         OutlinedTextField {
             id: trackField
             width: (parent.width - parent.spacing) / 2
-            placeholder: qsTr("Track")
+            placeholder: "Track"
             inputItem.inputMethodHints: Qt.ImhDigitsOnly
             onAccepted: root.save()
         }
         OutlinedTextField {
             id: discField
             width: (parent.width - parent.spacing) / 2
-            placeholder: qsTr("Disc")
+            placeholder: "Disc"
             inputItem.inputMethodHints: Qt.ImhDigitsOnly
             onAccepted: root.save()
         }
@@ -278,14 +279,14 @@ StyledDialog {
 
     buttons: [
         TextButton {
-            text: qsTr("Save")
+            text: "Save"
             busy: root.saving
             enabled: !root.saving
             onClicked: root.save()
         },
         TextButton {
             variant: TextButton.Text
-            text: qsTr("Cancel")
+            text: "Cancel"
             onClicked: root.close()
         }
     ]

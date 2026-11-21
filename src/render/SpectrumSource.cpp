@@ -26,7 +26,7 @@
 #include <array>
 #include <cmath>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 SpectrumSource *s_instance = nullptr;
@@ -154,4 +154,4 @@ std::array<float, 5> SpectrumSource::energies() const
     return {mean(0, 4), mean(4, 9), mean(9, 15), mean(15, 32), mean(32, 46)};
 }
 
-} // namespace swiftify
+} // namespace swifty

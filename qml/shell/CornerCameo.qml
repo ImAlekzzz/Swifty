@@ -18,7 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // ten seconds into a song from one particular soundtrack, a figure pops up
 // from the window's bottom-right corner, gives a thumbs up for five seconds,
@@ -89,7 +89,7 @@ Item {
         transformOrigin: Item.Bottom
         // loaded only for the songs it comes up for: decoded, it is two
         // megabytes, kept for the whole session
-        source: root.due ? "qrc:/qt/qml/Swiftify/resources/cameo.png" : ""
+        source: root.due ? "qrc:/qt/qml/Swifty/resources/cameo.png" : ""
         // in points: qt loads it at the screen's pixels a point itself
         sourceSize: Qt.size(Math.ceil(width), Math.ceil(height))
         fillMode: Image.PreserveAspectFit

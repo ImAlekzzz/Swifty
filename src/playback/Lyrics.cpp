@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +19,8 @@
 
 #include "playback/Lyrics.h"
 
+#include "swifty_core.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -28,7 +31,7 @@
 
 #include <algorithm>
 
-namespace swiftify {
+namespace swifty {
 
 std::optional<Lyrics> Lyrics::fromLrc(const QString &text)
 {
@@ -89,6 +92,28 @@ std::optional<Lyrics> Lyrics::besideFile(const QString &musicPath)
         }
     }
     return std::nullopt;
+}
+
+std::optional<Lyrics> Lyrics::embedded(const QString &musicPath)
+{
+    char *error = nullptr;
+    char *text = swifty_read_local_lyrics(musicPath.toUtf8().constData(), &error);
+    if (error) {
+        swifty_string_free(error);
+    }
+    if (!text) {
+        return std::nullopt;
+    }
+    const QString lyrics = QString::fromUtf8(text);
+    swifty_string_free(text);
+    if (lyrics.trimmed().isEmpty()) {
+        return std::nullopt;
+    }
+    std::optional<Lyrics> parsed = fromLrc(lyrics);
+    if (parsed) {
+        parsed->provider = QStringLiteral("Embedded");
+    }
+    return parsed;
 }
 
 std::optional<Lyrics> Lyrics::fromJson(const QByteArray &json)
@@ -177,4 +202,4 @@ void LyricsModel::setLines(const QList<LyricLine> &lines)
     emit countChanged();
 }
 
-} // namespace swiftify
+} // namespace swifty

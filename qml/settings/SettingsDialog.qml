@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +21,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Templates as T
-import Swiftify
+import Swifty
 
 // settings, as a sheet over the window rather than a window of its own, laid
 // out like end4's settings app: a navigation rail on the left, and the chosen
@@ -30,10 +31,10 @@ T.Popup {
     id: root
 
     property int page: 0
-    readonly property list<string> titles: [qsTr("Visualizer"), qsTr("Background"), qsTr("Playback"), qsTr("Files"), qsTr("Appearance"), qsTr("Performance"),
-                                            qsTr("Account"), qsTr("About")]
+    readonly property list<string> titles: ["Visualizer", "Background", "Playback", "Files", "Appearance", "Performance",
+                                            "About"]
     readonly property list<string> symbols: ["graphic_eq", "wallpaper", "play_circle", "folder", "palette", "speed",
-                                             "account_circle", "info"]
+                                             "info"]
     readonly property list<string> shapes: ["sunny", "flower", "cookie9", "softBoom", "clover4", "gem", "cookie12", "heart"]
 
     parent: T.Overlay.overlay
@@ -76,86 +77,69 @@ T.Popup {
             onActivated: root.close()
         }
 
-        // a short window can't fit every destination, so the rail scrolls
-        Flickable {
-            id: railScroller
-            objectName: "settingsRail"
+        Column {
+            id: rail
             x: 12
-            width: 104
-            height: parent.height
-            contentHeight: rail.implicitHeight + 32
-            boundsBehavior: Flickable.StopAtBounds
-            interactive: contentHeight > height
-            clip: true
+            y: 16
+            width: 80
+            spacing: 4
 
-            ScrollBar.vertical: StyledScrollBar {}
+            Repeater {
+                model: root.titles.length
 
-            Column {
-                id: rail
-                y: 16
-                width: railScroller.width
-                spacing: 4
+                delegate: RippleButton {
+                    id: destination
 
-                Repeater {
-                    model: root.titles.length
+                    required property int index
+                    readonly property bool selected: root.page === index
 
-                    delegate: RippleButton {
-                        id: destination
+                    width: rail.width
+                    implicitHeight: 64
+                    padding: 0
+                    colBackground: "transparent"
+                    colBackgroundHover: "transparent"
+                    rippleEnabled: false
+                    onClicked: root.page = index
 
-                        required property int index
-                        readonly property bool selected: root.page === index
+                    contentItem: Column {
+                        spacing: 4
 
-                        width: rail.width
-                        implicitHeight: 64
-                        padding: 0
-                        colBackground: "transparent"
-                        colBackgroundHover: "transparent"
-                        rippleEnabled: false
-                        onClicked: root.page = index
+                        // the selection is a pill behind the icon, which grows in
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 56
+                            height: 32
+                            radius: height / 2
+                            color: Qt.alpha(Appearance.colors.layer1Hover, !destination.selected && destination.hovered ? 1 : 0)
 
-                        contentItem: Column {
-                            spacing: 4
-
-                            // the selection is a pill behind the icon, which grows in
-                            Rectangle {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                width: 56
-                                height: 32
-                                radius: height / 2
-                                color: Qt.alpha(Appearance.colors.layer1Hover, !destination.selected && destination.hovered ? 1 : 0)
-
-                                Behavior on color {
-                                    ElementMoveFastColor {}
-                                }
-
-                                MaterialSymbol {
-                                    anchors.centerIn: parent
-                                    Reveal.shown: !destination.selected
-                                    text: root.symbols[destination.index]
-                                    iconSize: 22
-                                    color: Appearance.colors.onSurfaceVariant
-                                }
-                                ShapeIcon {
-                                    anchors.centerIn: parent
-                                    Reveal.shown: destination.selected
-                                    Reveal.overshoot: 2.4
-                                    size: 38
-                                    iconSize: 20
-                                    shape: root.shapes[destination.index]
-                                    symbol: root.symbols[destination.index]
-                                    hovered: destination.hovered
-                                }
+                            Behavior on color {
+                                ElementMoveFastColor {}
                             }
-                            StyledText {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                width: rail.width
-                                horizontalAlignment: Text.AlignHCenter
-                                elide: Text.ElideRight
-                                text: root.titles[destination.index]
-                                font.pixelSize: Appearance.fontSize.smaller
-                                font.weight: destination.selected ? Font.DemiBold : Font.Normal
-                                color: destination.selected ? Appearance.colors.onSurface : Appearance.colors.onSurfaceVariant
+
+                            MaterialSymbol {
+                                anchors.centerIn: parent
+                                Reveal.shown: !destination.selected
+                                text: root.symbols[destination.index]
+                                iconSize: 22
+                                color: Appearance.colors.onSurfaceVariant
                             }
+                            ShapeIcon {
+                                anchors.centerIn: parent
+                                Reveal.shown: destination.selected
+                                Reveal.overshoot: 2.4
+                                size: 38
+                                iconSize: 20
+                                shape: root.shapes[destination.index]
+                                symbol: root.symbols[destination.index]
+                                hovered: destination.hovered
+                            }
+                        }
+                        StyledText {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: root.titles[destination.index]
+                            font.pixelSize: Appearance.fontSize.smaller
+                            font.weight: destination.selected ? Font.DemiBold : Font.Normal
+                            color: destination.selected ? Appearance.colors.onSurface : Appearance.colors.onSurfaceVariant
                         }
                     }
                 }
@@ -163,7 +147,7 @@ T.Popup {
         }
 
         Rectangle {
-            anchors.left: railScroller.right
+            anchors.left: rail.right
             anchors.leftMargin: 12
             anchors.right: parent.right
             anchors.rightMargin: 8
@@ -187,6 +171,7 @@ T.Popup {
             }
 
             Flickable {
+                WheelScroll {}
                 id: scroller
                 anchors.fill: parent
                 anchors.margins: 20
@@ -227,7 +212,7 @@ T.Popup {
             shape: "cookie6"
             symbol: "close"
             onClicked: root.close()
-            tooltip: qsTr("Close")
+            tooltip: "Close"
         }
     }
 }

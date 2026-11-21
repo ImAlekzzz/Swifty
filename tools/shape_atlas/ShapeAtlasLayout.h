@@ -24,7 +24,7 @@
 // tests that check it against Shapes.qml, and MaterialShapeItem, which finds
 // a shape's cell by its place here. material_shape.frag works the same
 // numbers out for itself.
-namespace swiftify::shapeatlas {
+namespace swifty::shapeatlas {
 
 /// a cell's side, in texels
 constexpr int kCell = 128;
@@ -101,4 +101,4 @@ inline const std::array<Entry, 37> &entries()
     return list;
 }
 
-} // namespace swiftify::shapeatlas
+} // namespace swifty::shapeatlas

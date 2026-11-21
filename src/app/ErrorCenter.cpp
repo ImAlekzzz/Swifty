@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,12 +18,10 @@
  */
 
 #include "app/ErrorCenter.h"
-#include "app/Settings.h"
-#include "app/Translations.h"
 
 #include <QQmlEngine>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 ErrorCenter *s_instance = nullptr;
@@ -33,9 +32,6 @@ ErrorCenter::ErrorCenter(QObject *parent)
 {
     if (!s_instance) {
         s_instance = this;
-    }
-    if (auto *settings = Settings::instance(); settings && settings->takeRevertedDisabledLanguage()) {
-        show(Translations::disabledLanguageErrorMessage());
     }
 }
 
@@ -77,4 +73,4 @@ void ErrorCenter::clear()
     emit messageChanged();
 }
 
-} // namespace swiftify
+} // namespace swifty

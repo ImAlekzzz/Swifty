@@ -29,7 +29,7 @@
 
 #include <cmath>
 
-namespace swiftify {
+namespace swifty {
 
 namespace {
 
@@ -355,4 +355,4 @@ MaterialScheme::Roles MaterialScheme::interpolate(const Roles &from, const Roles
     return roles;
 }
 
-} // namespace swiftify
+} // namespace swifty

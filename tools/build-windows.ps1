@@ -1,6 +1,7 @@
 <#
     Swiftify, a spotify player for desktop
     Copyright (C) 2026  shred0s
+    Copyright (C) 2026  ImAlekz (modified for Swifty)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -21,9 +22,16 @@ param(
     [string]$QtPath,
     [string]$MingwPath,
     [string]$BuildRoot,
-    [string]$InstallPrefix = "$env:LOCALAPPDATA\Programs\Swiftify",
+    [string]$InstallPrefix = "$env:LOCALAPPDATA\Programs\Swifty",
     [ValidateRange(1, 256)]
-    [int]$Jobs = [Math]::Max(1, [Math]::Min(8, [Environment]::ProcessorCount))
+    [int]$Jobs = [Math]::Max(1, [Math]::Min(8, [Environment]::ProcessorCount)),
+    # by default the window waits for a key at the end, so that what it says
+    # can be read when the script is run by a double click; builds on a server
+    # (CI is set) never wait
+    [switch]$NoPause,
+    # builds without the system media controls (volume flyout, lock screen, media
+    # keys), if their code will not compile with this Visual Studio
+    [switch]$NoMediaControls
 )
 
 Set-StrictMode -Version Latest
@@ -174,11 +182,11 @@ function Invoke-WindowsBuild {
     $qtConfiguration = Get-Content -LiteralPath "$QtPath\mkspecs\qconfig.pri" -Raw
     $qtVersion = [regex]::Match($qtConfiguration, '(?m)^QT_VERSION\s*=\s*(\S+)').Groups[1].Value
     if (-not $qtVersion -or [version]$qtVersion -lt [version]'6.10' -or $qtConfiguration -notmatch '(?m)^QT_ARCH\s*=\s*x86_64\s*$') {
-        throw 'Swiftify requires a Qt 6.10+ x64 kit.'
+        throw 'Swifty requires a Qt 6.10+ x64 kit.'
     }
-    foreach ($module in @('Qt6Core', 'Qt6Widgets', 'Qt6Quick', 'Qt6QuickControls2', 'Qt6ShaderTools', 'Qt6WebSockets')) {
+    foreach ($module in @('Qt6Core', 'Qt6Widgets', 'Qt6Quick', 'Qt6QuickControls2', 'Qt6ShaderTools')) {
         if (-not (Test-Path -LiteralPath "$QtPath\lib\cmake\$module\${module}Config.cmake")) {
-            throw "The selected Qt kit is missing $module. Install Qt Base, Qt Declarative, Qt Shader Tools and Qt WebSockets with the Qt installer."
+            throw "The selected Qt kit is missing $module. Install Qt Base, Qt Declarative and Qt Shader Tools with the Qt installer."
         }
     }
     $qtTools = Join-Path (Split-Path -Parent (Split-Path -Parent $QtPath)) 'Tools'
@@ -247,17 +255,8 @@ function Invoke-WindowsBuild {
             "-DCMAKE_INSTALL_PREFIX=$($dependencyPrefix.Replace('\', '/'))", '-DCMAKE_INSTALL_BINDIR=bin'
         )
         $dependencies = @(
-            @{ Name = 'qtkeychain'; Url = 'https://github.com/frankosterfeld/qtkeychain.git'; Options = @('-DBUILD_WITH_QT5=OFF', '-DBUILD_TEST_APPLICATION=OFF', '-DBUILD_TRANSLATIONS=OFF') },
             @{ Name = 'qcoro'; Url = 'https://github.com/qcoro/qcoro.git'; Options = @('-DUSE_QT_VERSION=6', '-DQCORO_WITH_QTDBUS=OFF', '-DQCORO_WITH_QTWEBSOCKETS=OFF', '-DQCORO_WITH_QTQUICK=OFF', '-DQCORO_WITH_QML=OFF', '-DQCORO_WITH_QTTEST=OFF', '-DQCORO_BUILD_EXAMPLES=OFF') }
         )
-        if ($rustTarget -eq 'x86_64-pc-windows-msvc') {
-            # windeployqt takes any dll named qt6... for one of qt's own and
-            # looks for it in qt's folder, where qt6keychain.dll is not. it gets
-            # the lib prefix mingw already gives it
-            $libraryPrefix = Join-Path $buildDirectory 'library-prefix.cmake'
-            Set-Content -LiteralPath $libraryPrefix -Value 'set(CMAKE_SHARED_LIBRARY_PREFIX lib)'
-            $dependencies[0].Options += "-DCMAKE_PROJECT_INCLUDE=$($libraryPrefix.Replace('\', '/'))"
-        }
         foreach ($dependency in $dependencies) {
             Write-Host "Building $($dependency.Name)..."
             $dependencySource = Join-Path $sourcesDirectory $dependency.Name
@@ -268,33 +267,15 @@ function Invoke-WindowsBuild {
             Invoke-Native $cmake @('--install', $dependencyBuild) | Out-Host
         }
 
-        Write-Host 'Building Swiftify...'
-        $appBuild = Join-Path $buildDirectory 'swiftify'
-        Invoke-Native $cmake (@('-S', $sourceRoot, '-B', $appBuild) + $commonOptions + @("-DRust_TOOLCHAIN=$rustToolchain", "-DRust_CARGO_TARGET=$rustTarget", '-DSWIFTIFY_BUNDLED_QT=ON', "-DCMAKE_INSTALL_PREFIX=$($InstallPrefix.Replace('\', '/'))")) | Out-Host
+        Write-Host 'Building Swifty...'
+        $appBuild = Join-Path $buildDirectory 'swifty'
+        Invoke-Native $cmake (@('-S', $sourceRoot, '-B', $appBuild) + $commonOptions + @("-DRust_TOOLCHAIN=$rustToolchain", "-DRust_CARGO_TARGET=$rustTarget", '-DSWIFTY_BUNDLED_QT=ON', "-DSWIFTY_WINDOWS_MEDIA_CONTROLS=$(if ($NoMediaControls) { 'OFF' } else { 'ON' })", "-DCMAKE_INSTALL_PREFIX=$($InstallPrefix.Replace('\', '/'))")) | Out-Host
         Invoke-Native $cmake @('--build', $appBuild, '--parallel', "$Jobs") | Out-Host
         Invoke-Native $cmake @('--install', $appBuild) | Out-Host
-        if (-not (Test-Path -LiteralPath (Join-Path $InstallPrefix 'share\licenses\swiftify\LICENSE') -PathType Leaf)) {
-            throw 'The license was not installed.'
-        }
-        foreach ($license in @('material-color-utilities.LICENSE', 'rounded-polygon-qmljs.LICENSE', 'material-symbols.LICENSE', 'rust-crates.LICENSE', 'qt.LICENSE', 'qt.NOTICE', 'qtkeychain.LICENSE', 'qcoro.LICENSE')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $InstallPrefix "share\licenses\swiftify\$license") -PathType Leaf)) {
-                throw "$license was not installed."
-            }
-        }
         $installBin = Join-Path $InstallPrefix 'bin'
-        $executable = Join-Path $installBin 'swiftify.exe'
+        $executable = Join-Path $installBin 'swifty.exe'
         Invoke-Native $deployQt @('--release', '--force', '--compiler-runtime', '--qmldir', (Join-Path $sourceRoot 'qml'), $executable) | Out-Host
         Copy-Item -Path "$dependencyPrefix\bin\*.dll" -Destination $installBin -Force
-        if ($rustTarget -eq 'x86_64-pc-windows-msvc') {
-            # windeployqt only leaves msvc's runtime installer, so the runtime
-            # goes beside the exe and it runs without visual c++ installed
-            $runtimeDirectory = Get-ChildItem -LiteralPath (Join-Path $env:VCToolsRedistDir 'x64') -Directory -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1
-            if (-not $runtimeDirectory) {
-                throw 'Cannot locate the Visual C++ runtime to bundle.'
-            }
-            Copy-Item -Path "$($runtimeDirectory.FullName)\*.dll" -Destination $installBin -Force
-            Remove-Item -LiteralPath (Join-Path $installBin 'vc_redist.x64.exe') -ErrorAction SilentlyContinue
-        }
         if ($rustTarget -eq 'x86_64-pc-windows-gnu') {
             foreach ($runtime in @('libstdc++-6.dll', 'libgcc_s_seh-1.dll', 'libwinpthread-1.dll')) {
                 $runtimePath = Join-Path $mingw.Directory $runtime
@@ -307,7 +288,7 @@ function Invoke-WindowsBuild {
                 Copy-Item -LiteralPath $runtimePath -Destination $installBin -Force
             }
         }
-        Write-Host "Installed Swiftify. Run: & `"$executable`""
+        Write-Host "Installed Swifty. Run: & `"$executable`""
     } finally {
         foreach ($entry in Get-ChildItem Env:) {
             if (-not $originalEnvironment.ContainsKey($entry.Name)) {
@@ -321,11 +302,19 @@ function Invoke-WindowsBuild {
     }
 }
 
+function Wait-ForKey {
+    if (-not $NoPause -and -not $env:CI) {
+        Read-Host 'Press Enter to close this window' | Out-Null
+    }
+}
+
 if ($MyInvocation.InvocationName -ne '.') {
     try {
         Invoke-WindowsBuild -QtPath $QtPath -MingwPath $MingwPath -BuildRoot $BuildRoot -InstallPrefix $InstallPrefix -Jobs $Jobs
+        Wait-ForKey
     } catch {
         Write-Error $_ -ErrorAction Continue
+        Wait-ForKey
         exit 1
     }
 }
