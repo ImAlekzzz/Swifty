@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,10 +19,10 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
+import Swifty
 
 // cover art: decoded at about the size shown, clipped by a shader rather
-// than a layer, over a procedural record sleeve until it arrives. with
+// than a layer, over a gradient placeholder until it arrives. with
 // `crossfade` a new cover blends over the old one, as the swift player's
 // artwork does. resized, it keeps showing what it has while the new size
 // decodes, rather than dropping back to the placeholder.
@@ -42,9 +43,6 @@ Item {
     property int revealDuration: 0
     property double sourceChangedAt: 0
     property string placeholderSymbol: "music_note"
-    /// Shared across a card, its hero and navigation thumbnail. Genuine art
-    /// always wins; this identity only chooses the missing/loading sleeve.
-    property string fallbackKey: source.toString().length > 0 ? source.toString() : placeholderSymbol
     /// a cover is shared with everything else showing it at the same size,
     /// and its decoded pixels are let go of once it is on the gpu
     /// (QSG_TRANSIENT_IMAGES). another window cannot draw from what is gone,
@@ -107,12 +105,7 @@ Item {
     readonly property real squiggleMiddle: Math.min(width, height) / 2 - squiggleAmplitude - squiggleThickness / 2 - 0.75
     readonly property real effectiveRadius: circular ? Math.min(face.width, face.height) / 2 : radius
 
-    onSourceChanged: {
-        sourceChangedAt = Date.now()
-        if (source.toString().length === 0) {
-            back.source = ""
-        }
-    }
+    onSourceChanged: sourceChangedAt = Date.now()
 
     function artworkUrl(url: url): string {
         const text = url.toString()
@@ -170,22 +163,36 @@ Item {
 
         // under a squiggly cover the placeholder goes through the same cut,
         // so the squiggle is its edge too
-        Image {
+        Rectangle {
             id: placeholder
             anchors.fill: parent
+            radius: root.effectiveRadius
+            visible: (!root.ready || frontLayer.opacity < 1) && !backLayer.visible
+            gradient: Gradient {
+                GradientStop { position: 0; color: Appearance.colors.primaryContainer }
+                GradientStop { position: 1; color: Appearance.colors.tertiaryContainer }
+            }
+
+            MaterialSymbol {
+                anchors.centerIn: parent
+                text: root.placeholderSymbol
+                iconSize: Math.max(12, Math.min(parent.width, parent.height) * 0.38)
+                color: Appearance.colors.onPrimaryContainer
+                opacity: 0.75
+            }
+        }
+
+        ShaderEffectSource {
+            id: placeholderTexture
             visible: false
-            asynchronous: true
-            source: root.artworkUrl("swiftify-cover:/" + (Theme.dark ? "dark" : "light")
-                                    + "?key=" + encodeURIComponent(root.fallbackKey))
-            sourceSize: Qt.size(root.pixelSize, root.pixelSize)
+            sourceItem: root.showsSquiggle ? placeholder : null
+            hideSource: true
         }
 
         Layer {
-            image: placeholder
+            image: placeholderTexture
             radius: root.effectiveRadius
-            borderWidth: root.borderWidth
-            borderColor: root.borderColor
-            visible: (!root.ready || frontLayer.opacity < 1) && !backLayer.visible
+            visible: root.showsSquiggle && placeholder.visible
         }
 
         // the cover last shown, at the size it was shown: what stands in
@@ -206,14 +213,9 @@ Item {
             source: root.artworkUrl(root.source)
             sourceSize: Qt.size(root.pixelSize, root.pixelSize)
             onStatusChanged: {
-                if (status === Image.Error) {
-                    back.source = ""
-                    return
-                }
                 if (status !== Image.Ready) {
                     return
                 }
-
                 sweep.stop()
                 frontLayer.reveal = 1
                 // the same cover at a new size is simply there

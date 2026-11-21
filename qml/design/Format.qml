@@ -1,6 +1,7 @@
 /*
  * Swiftify, a spotify player for desktop
  * Copyright (C) 2026  shred0s
+ * Copyright (C) 2026  ImAlekz (modified for Swifty)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,10 +20,8 @@
 pragma Singleton
 pragma ComponentBehavior: Bound
 import QtQuick
-import Swiftify
 
 QtObject {
-    readonly property var locale: Settings.language === "system" ? Qt.locale() : Qt.locale(Settings.language)
     /// "3:07", as playbackTime() writes a song's time
     function playbackTime(milliseconds: real): string {
         const seconds = Math.max(Math.floor(milliseconds / 1000), 0)
@@ -39,14 +38,14 @@ QtObject {
         const hours = Math.floor(totalMinutes / 60)
         const minutes = totalMinutes % 60
         if (hours > 0) {
-            return minutes > 0 ? hours + qsTr(" hr ") + minutes + qsTr(" min") : hours + qsTr(" hr")
+            return minutes > 0 ? hours + " hr " + minutes + " min" : hours + " hr"
         }
-        return minutes + qsTr(" min")
+        return minutes + " min"
     }
 
     /// "12 songs", "1 song"
     function songCount(count: int): string {
-        return count === 1 ? qsTr("%n song", "", count) : qsTr("%n songs", "", count)
+        return count + (count === 1 ? " song" : " songs")
     }
 
     function joined(parts: list<string>, separator: string): string {
@@ -65,12 +64,12 @@ QtObject {
     /// decimal place below a hundred
     function fileSize(bytes: real): string {
         if (bytes <= 0) {
-            return qsTr("Zero KB")
+            return "Zero KB"
         }
         if (bytes < 1000) {
-            return Math.round(bytes) + qsTr(" bytes")
+            return Math.round(bytes) + " bytes"
         }
-        const units = [qsTr("KB"), qsTr("MB"), qsTr("GB"), qsTr("TB")]
+        const units = ["KB", "MB", "GB", "TB"]
         let value = bytes / 1000
         let unit = 0
         while (value >= 1000 && unit < units.length - 1) {
