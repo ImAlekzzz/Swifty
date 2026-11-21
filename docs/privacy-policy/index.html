@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#fcf8fe">
+<meta name="theme-color" content="#fcf4e0">
 <meta name="description" content="Privacy Policy for Swifty.">
 <title>Privacy Policy · Swifty</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@8..144,100..1000&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#fcf8fe;--surf:#f3eff7;--surf2:#e9e4f0;--text:#1c1b20;--muted:#5d5b66;--pri:#4b52c9;--onpri:#fff;--tonal:#dfe0ff;--ontonal:#16196b;--line:rgba(28,27,32,.12);--code:#ebe6f2}
-:root[data-theme=dark]{--bg:#111214;--surf:#1a1b1e;--surf2:#232529;--text:#f2f2f2;--muted:#c7c7c7;--pri:#a5abf3;--onpri:#111214;--tonal:#2e3170;--ontonal:#dfe0ff;--line:rgba(255,255,255,.12);--code:#0d0e10}
+:root{--bg:#fcf4e0;--surf:color-mix(in srgb,#e8b176 22%,#fcf4e0);--surf2:color-mix(in srgb,#e8b176 42%,#fcf4e0);--text:#010101;--muted:color-mix(in srgb,#4c1f18 85%,#fcf4e0);--pri:#a04b23;--onpri:#fcf4e0;--tonal:#e8b176;--ontonal:#4c1f18;--line:rgba(76,31,24,.2);--code:color-mix(in srgb,#e8b176 30%,#fcf4e0)}
+:root[data-theme=dark]{--bg:#010101;--surf:color-mix(in srgb,#4c1f18 40%,#010101);--surf2:color-mix(in srgb,#4c1f18 75%,#010101);--text:#fcf4e0;--muted:color-mix(in srgb,#fcf4e0 75%,#010101);--pri:#e8b176;--onpri:#010101;--tonal:#4c1f18;--ontonal:#e8b176;--line:rgba(232,177,118,.2);--code:color-mix(in srgb,#4c1f18 30%,#010101)}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth;scroll-padding-top:88px}
 body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.6 "Google Sans Flex",system-ui,sans-serif;transition:background .2s}
@@ -101,7 +101,7 @@ footer{border-top:1px solid var(--line);padding:32px 24px;text-align:center;colo
 (function(){
 var r=document.documentElement,b=document.getElementById("theme"),i=b.firstChild,s=null;
 try{s=localStorage.getItem("theme")}catch(e){}
-function set(t){r.dataset.theme=t;i.textContent=t==="dark"?"light_mode":"dark_mode";document.querySelector('meta[name=theme-color]').content=t==="dark"?"#111214":"#fcf8fe"}
+function set(t){r.dataset.theme=t;i.textContent=t==="dark"?"light_mode":"dark_mode";document.querySelector('meta[name=theme-color]').content=t==="dark"?"#010101":"#fcf4e0"}
 set(s||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
 b.onclick=function(){var t=r.dataset.theme==="dark"?"light":"dark";set(t);try{localStorage.setItem("theme",t)}catch(e){}}
 })();
