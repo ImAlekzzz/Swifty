@@ -4,6 +4,8 @@
 
 # Swifty
 
+<div align="left">
+
 a local music player for desktop, built with Qt Quick on top of a Rust audio core.
 it plays the music files on your computer: no account and no login. it follows
 Material 3 Expressive (heavy inspo from end4).
