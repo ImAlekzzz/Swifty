@@ -25,7 +25,7 @@ only knows your own files. forked by ImAlekzzz.
   </tr>
 </table>
 
-**[Documentation](https://imalekzzz.github.io/swifty/)**
+**[Documentation](https://imalekzzz.github.io/Swifty/docs/Documentation)**
 [Install](#install)
 [Privacy](#privacy)
 [Troubleshooting](#troubleshooting)
