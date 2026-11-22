@@ -1,11 +1,10 @@
 # Maintainer: ImAlekzzz
-# Builds the checkout this file sits in: run `makepkg -si` from this folder.
 pkgname=swifty
 pkgver=1.4.2
 pkgrel=1
 pkgdesc='A local music player for Wayland, in Material 3 after end4'
-url='https://github.com/ImAlekzzz/swifty'
 arch=('x86_64' 'aarch64')
+url='https://github.com/ImAlekzzz/swifty'
 license=('GPL-3.0-or-later')
 depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'qcoro' 'libpulse'
          'alsa-lib' 'hicolor-icon-theme')
@@ -14,21 +13,5 @@ optdepends=('xdg-desktop-portal: the native file picker'
             'qt6-imageformats: covers and artist pictures in WebP and other formats'
             'ttf-material-symbols-variable-git: the icon font, if not bundled at build time')
 options=('!lto')
-
-_root="$startdir/../.."
-
-build() {
-    cmake -S "$_root" -B build -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr \
-        -DBUILD_TESTING=OFF
-    cmake --build build
-}
-
-package() {
-    DESTDIR="$pkgdir" cmake --install build
-    # the bundled colour library is apache-2.0 (cmake install already puts LICENSE,
-    # THIRD_PARTY_LICENSES.md and the vendored licences in share/licenses/swifty)
-    install -Dm644 "$_root/third_party/material-color-utilities/LICENSE" \
-        "$pkgdir/usr/share/licenses/$pkgname/material-color-utilities.LICENSE"
-}
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('b579d4f43094c25b9fbcc241eb7680bee9daac95c423e026a9fb0e69a078252c')
