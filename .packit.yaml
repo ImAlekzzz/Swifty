@@ -6,7 +6,7 @@ jobs:
   - job: copr_build
     trigger: release
     owner: imalekz
-    project: swifty
+    project: Swifty
     enable_net: true
     targets:
       - fedora-all-x86_64
