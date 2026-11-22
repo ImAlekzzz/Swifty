@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#fcf4e0">
-<meta name="description" content="A local music player for Wayland, in Material 3. Rust audio core, Qt Quick interface.">
+<meta name="description" content="A local music player for desktop, in Material 3 Expressive. Rust audio core, Qt Quick interface.">
 <title>Swifty</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -67,17 +67,18 @@ footer{border-top:1px solid var(--line);padding:32px 24px;text-align:center;colo
 <body>
 <header><div class="bar">
 <a class="brand" href="#top">Swifty</a>
-<nav><a href="#features">Features</a><a href="#install">Install</a><a href="#start">Before you start</a><a href="#control">Control</a></nav>
+<nav><a href="#features">Features</a><a href="#install">Install</a><a href="#control">Command line</a><a href="#privacy">Privacy</a><a href="#help">Troubleshooting</a><a href="#license">License</a></nav>
 <button class="icon-btn" id="theme" aria-label="Toggle dark mode"><span class="ms">dark_mode</span></button>
 </div></header>
 
 <main id="top">
 <div class="hero">
-<div class="chip"><span class="ms">music_note</span>No account, no subscription</div>
+<div class="chip"><span class="ms">music_note</span>No account, no login</div>
 <h1>Swifty, your music, <em>local</em>.</h1>
-<p>A local music player for Wayland, in Material 3. It plays the music on your computer, with a Rust audio core and a Qt Quick interface. A fork of <a href="https://github.com/swiftify-org/swiftify">Swiftify</a> by addenator, with everything of Spotify removed.</p>
+<p style="margin-bottom:16px">a local music player for desktop, built with Qt Quick on top of a Rust audio core. it plays the music files on your computer: no account and no login. it follows Material 3 Expressive (heavy inspo from end4). runs on linux (made for wayland and hyprland), macos and windows.</p>
+<p>swifty is a fork of <a href="https://github.com/swiftify-org/swiftify">Swiftify</a> by shred0s, which was a spotify client. everything spotify is gone from this fork: the player only knows your own files. forked by ImAlekzzz. don’t expect frequent updates, maybe once in a while.</p>
 <div class="btns">
-<a class="btn" href="#install"><span class="ms">download</span>Download</a>
+<a class="btn" href="#install"><span class="ms">download</span>Install</a>
 <a class="btn t" href="https://github.com/ImAlekzzz/swifty"><span class="ms">code</span>Source code</a>
 <a class="btn t" href="https://github.com/ImAlekzzz/swifty/issues"><span class="ms">bug_report</span>Issues</a>
 </div>
@@ -86,75 +87,81 @@ footer{border-top:1px solid var(--line);padding:32px 24px;text-align:center;colo
 <section id="features">
 <h2><span class="ms">auto_awesome</span>What it does</h2>
 <div class="grid">
-<div class="card"><span class="ms">folder_open</span><h3>Your own files</h3><p>Plays folders and files of your own, with their tags and cover art.</p></div>
-<div class="card"><span class="ms">favorite</span><h3>Playlists</h3><p>Playlists, favourites and play counts.</p></div>
-<div class="card"><span class="ms">lyrics</span><h3>Synced lyrics</h3><p>From LRCLIB and NetEase.</p></div>
-<div class="card"><span class="ms">graphic_eq</span><h3>Spectrum and immersive player</h3><p>A spectrum and a full screen player.</p></div>
-<div class="card"><span class="ms">person</span><h3>Artist pictures</h3><p>From Discogs, with your own free token.</p></div>
-<div class="card"><span class="ms">sports_esports</span><h3>Discord rich presence</h3><p>Shown as “Listening to Swifty”.</p></div>
-<div class="card"><span class="ms">keyboard_command_key</span><h3>Media keys</h3><p>MPRIS on Linux, the system controls on macOS and Windows.</p></div>
-<div class="card"><span class="ms">link</span><h3>swifty:// links</h3><p>Control it from a browser or a launcher.</p></div>
+<div class="card"><span class="ms">folder_open</span><h3>Your own files</h3><p>plays <strong>mp3, flac, ogg, m4a, aac, alac, wav and aiff</strong> from folders or files you add.</p></div>
+<div class="card"><span class="ms">library_music</span><h3>Your library</h3><p><strong>Home, Search, Songs, Albums, Artists, Playlists</strong> and <strong>Favourites</strong>, with the title, artist, album, genre and cover read from each file’s own tags.</p></div>
+<div class="card"><span class="ms">play_circle</span><h3>The player</h3><p>a player with <strong>shuffle, repeat, a queue and a sleep timer</strong>, that remembers where you stopped.</p></div>
+<div class="card"><span class="ms">equalizer</span><h3>Equalizer and tempo</h3><p>an <strong>equalizer</strong> (−12 to +12 dB), <strong>tempo</strong> (0.5× to 2×), <strong>pitch</strong> and <strong>crossfade</strong>.</p></div>
+<div class="card"><span class="ms">graphic_eq</span><h3>Immersive player</h3><p>the <strong>immersive player</strong> with <strong>visualizers</strong> and <strong>synced lyrics</strong>.</p></div>
+<div class="card"><span class="ms">edit</span><h3>Tag editor</h3><p>a <strong>tag editor</strong> that writes changes back into your files.</p></div>
+<div class="card"><span class="ms">lyrics</span><h3>Lyrics</h3><p><strong>lyrics</strong> from LRCLIB and MusicBrainz, a <code>.lrc</code> file beside the song, or the file’s tags.</p></div>
+<div class="card"><span class="ms">person</span><h3>Artist pictures</h3><p><strong>artist pictures</strong> from Discogs (with your own free token), a file in the artist’s folder, or a cover.</p></div>
+<div class="card"><span class="ms">sports_esports</span><h3>Discord rich presence</h3><p><strong>Discord rich presence</strong> (<em>Listening to</em>), through the Discord app on your computer.</p></div>
+<div class="card"><span class="ms">keyboard_command_key</span><h3>Media keys</h3><p><strong>MPRIS</strong>, media keys and the tray on linux, and media controls on windows.</p></div>
+<div class="card"><span class="ms">link</span><h3>Command line</h3><p>a <strong>command line</strong> and <code>swifty://</code> links, to use from keybinds.</p></div>
 </div>
 </section>
 
 <section id="install">
 <h2><span class="ms">download</span>Install</h2>
-<p>Every build is on the <a href="https://github.com/ImAlekzzz/swifty/releases">releases page</a>. Pick the one for your system.</p>
-<div class="grid">
-<div class="card"><span class="ms">terminal</span><h3>Fedora and RPM</h3><p><code>swifty-*.rpm</code></p><ul><li><span class="ms">info</span>Install with <code>sudo dnf install ./swifty-*.rpm</code></li></ul></div>
-<div class="card"><span class="ms">inventory_2</span><h3>Any Linux</h3><p>x86_64, Qt included · <code>.tar.gz</code></p><ul><li><span class="ms">info</span>Unpack it anywhere and run <code>bin/swifty</code></li></ul></div>
-<div class="card"><span class="ms">laptop_mac</span><h3>macOS</h3><p>Apple silicon · <code>.dmg</code></p><ul><li><span class="ms">info</span>Open it and drag Swifty to Applications.</li></ul></div>
-<div class="card"><span class="ms">desktop_windows</span><h3>Windows</h3><p>Build folder</p><ul><li><span class="ms">info</span>Move it somewhere you will keep it and run <code>bin\swifty.exe</code></li></ul></div>
-</div>
-<p>If macOS refuses to open the app because it is not signed, run this once, then open it as usual:</p>
-<pre>xattr -dr com.apple.quarantine /Applications/Swifty.app</pre>
-
-<h3 style="margin-top:32px">Build it yourself</h3>
-<p>Arch and Debian have no download: build them from source with the scripts below, and any other system can too. Building needs the network, because the interface and icon fonts are downloaded (each is checked against a hash). Qt 6.10 is what the source asks for.</p>
+<p>there are no prebuilt packages in the repo: swifty is built from source, and the scripts in <code>tools/</code> make packages for each system (<code>build-debian.sh</code>, <code>build-rpm.sh</code>, <code>build-linux-tarball.sh</code>, <code>build-macos-dmg.sh</code> and <code>build-windows.ps1</code>). you need Qt 6.10+, QCoro, CMake, Ninja, a C++20 compiler and <a href="https://rustup.rs">Rust</a>. build in a fresh folder.</p>
 <pre>git clone https://github.com/ImAlekzzz/swifty.git
 cd swifty</pre>
 <details><summary>Arch Linux<span class="ms">expand_more</span></summary><div><pre>cd packaging/arch
 makepkg -si</pre></div></details>
+<details><summary>Linux, macOS (cmake)<span class="ms">expand_more</span></summary><div><pre>cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build build
+cmake --install build</pre></div></details>
+<details><summary>Windows<span class="ms">expand_more</span></summary><div>in PowerShell:<pre>.\tools\build-windows.ps1</pre>move the folder it makes to a place you will keep it, such as <code>%LOCALAPPDATA%\Programs\Swifty</code>, and run <code>bin\swifty.exe</code> from there.</div></details>
 <details><summary>Fedora, from source<span class="ms">expand_more</span></summary><div><pre>./tools/build-rpm.sh --install-deps
 sudo dnf install dist/swifty-*.rpm</pre></div></details>
 <details><summary>Debian and Ubuntu<span class="ms">expand_more</span></summary><div><pre>./tools/build-debian.sh --install-deps</pre></div></details>
-<details><summary>Any Linux, with Qt included<span class="ms">expand_more</span></summary><div>Makes the same tarball as the download.<pre>./tools/build-linux-tarball.sh --qt ~/Qt/6.10.0/gcc_64</pre></div></details>
+<details><summary>Any Linux, with Qt included<span class="ms">expand_more</span></summary><div><pre>./tools/build-linux-tarball.sh --qt ~/Qt/6.10.0/gcc_64</pre></div></details>
 <details><summary>macOS, from source<span class="ms">expand_more</span></summary><div><pre>./tools/build-macos-dmg.sh</pre></div></details>
-<details><summary>Windows, from source<span class="ms">expand_more</span></summary><div>In PowerShell:<pre>.\tools\build-windows.ps1</pre>Move the folder it makes to a place you will keep it, such as <code>%LOCALAPPDATA%\Programs\Swifty</code>, and run <code>bin\swifty.exe</code> from there.</div></details>
-</section>
-
-<section id="start">
-<h2><span class="ms">checklist</span>Before you start</h2>
-<div class="grid">
-<div class="card"><span class="ms">library_music</span><h3>Your music</h3><p>Add a folder or files from the home screen or the settings.</p></div>
-<div class="card"><span class="ms">database</span><h3>Qt’s SQLite driver</h3><p>Swifty keeps its playlists and library in SQLite. Arch, Fedora and the Qt installer include the driver. On Debian and Ubuntu install <code>libqt6sql6-sqlite</code>.</p></div>
-<div class="card"><span class="ms">key</span><h3>Artist pictures (optional)</h3><p>Make a free personal token at discogs.com/settings/developers and paste it in Settings, Files, Artist Pictures.</p></div>
-<div class="card"><span class="ms">sports_esports</span><h3>Discord (optional)</h3><p>It works out of the box. You need the Discord desktop app running, and activity sharing on in Discord’s Activity Privacy settings. To show your own name instead, paste your own Application ID in Settings, Discord.</p></div>
-</div>
 </section>
 
 <section id="control">
-<h2><span class="ms">settings_remote</span>Control it from outside</h2>
-<p>Only one Swifty runs at a time. Starting it again passes the command to the one that is running, so these work as keybinds:</p>
-<pre>swifty --immersive
-swifty --play-pause
-swifty --next
-swifty --previous</pre>
-<p>The same commands work as links, for a browser, a bookmark or a launcher:</p>
+<h2><span class="ms">settings_remote</span>Command line</h2>
+<p>only one swifty runs at a time. launching it again passes the command to the one that’s running, so these work great as keybinds:</p>
+<pre>swifty --immersive    # open the immersive player
+swifty --play-pause   # play or pause
+swifty --next         # next song
+swifty --previous     # previous song</pre>
+<p><code>swifty://</code> links do the same from a browser or a launcher:</p>
 <pre>&lt;a href="swifty://play-pause"&gt;Play or pause&lt;/a&gt;</pre>
-<p>Known links:</p>
+<p>known links:</p>
 <div class="links"><a href="swifty://play-pause">play-pause</a><a href="swifty://next">next</a><a href="swifty://previous">previous</a><a href="swifty://immersive">immersive</a><a href="swifty://close-immersive">close-immersive</a><a href="swifty://play-recent">play-recent</a><a href="swifty://home">home</a><a href="swifty://playlists">playlists</a><a href="swifty://songs">songs</a><a href="swifty://favourites">favourites</a><a href="swifty://albums">albums</a><a href="swifty://artists">artists</a><a href="swifty://back">back</a></div>
-<p>A link can never change a setting or name a file.</p>
+<p>a link can never change a setting or name a file.</p>
 </section>
 
-<section>
-<h2><span class="ms">balance</span>License and credits</h2>
-<p>Swifty is free software under the GNU General Public License, version 3 or later. It is made from <a href="https://github.com/swiftify-org/swiftify">Swiftify</a> by addenator, and uses Qt, SQLite, QCoro, Symphonia, rodio and other projects under their own licenses. The full list is in <a href="https://github.com/ImAlekzzz/swifty/blob/main/THIRD_PARTY_LICENSES.md">THIRD_PARTY_LICENSES.md</a>.</p>
-<p>The design follows Material 3 Expressive, with a lot of inspiration from <a href="https://github.com/end-4/dots-hyprland">end-4’s dots-hyprland</a>. Fonts are Google Sans Flex and Material Symbols Rounded.</p>
+<section id="privacy">
+<h2><span class="ms">shield</span>Privacy</h2>
+<p>swifty has no account, no analytics and no telemetry, and the author receives nothing. it keeps its settings, playlists and caches on your own computer (<code>~/.config/Swifty</code>, <code>~/.local/share/Swifty</code> and <code>~/.cache/Swifty</code> on linux).</p>
+<p>the only things that leave your computer are the lookups below, and both can be turned off in the settings. every request also carries your IP address and a <code>Swifty/&lt;version&gt;</code> user agent.</p>
+<div class="grid">
+<div class="card"><span class="ms">lyrics</span><h3>Lyrics</h3><p>sent to <a href="https://lrclib.net">LRCLIB</a>, then <a href="https://musicbrainz.org">MusicBrainz</a>: title, main artist, album and length (LRCLIB), title and main artist (MusicBrainz).</p></div>
+<div class="card"><span class="ms">person</span><h3>Artist pictures</h3><p>sent to <a href="https://www.discogs.com">Discogs</a>: the artist’s name, and your token.</p></div>
+</div>
+<p style="margin-top:16px">Discord rich presence talks to the Discord app on your own computer, not over the network by swifty. the full <a href="https://imalekzzz.github.io/swifty/docs/privacy-policy/">privacy policy</a> and the <a href="https://imalekzzz.github.io/swifty/docs/TOS/">terms of use</a> are in the docs.</p>
+</section>
+
+<section id="help">
+<h2><span class="ms">help</span>Troubleshooting</h2>
+<p>swifty prints nothing to the terminal when all is well. to see what it is doing, start it with <code>SWIFTY_DEBUG=1</code>:</p>
+<pre>SWIFTY_DEBUG=1 swifty 2&gt;&amp;1 | grep -a "^swifty "</pre>
+<details><summary>playlists don’t survive a restart<span class="ms">expand_more</span></summary><div>Qt’s SQLite driver is missing (on debian/ubuntu it’s <code>libqt6sql6-sqlite</code>).</div></details>
+<details><summary>nothing shows on Discord<span class="ms">expand_more</span></summary><div>the Discord desktop app must be running, with <em>Share my activity</em> on.</div></details>
+<details><summary>it runs an old version after an update<span class="ms">expand_more</span></summary><div>quit it first (<code>pkill swifty</code>).</div></details>
+</section>
+
+<section id="license">
+<h2><span class="ms">balance</span>License</h2>
+<p>swifty is free software, under the GNU General Public License, version 3 or any later version. the full text is in <a href="https://github.com/ImAlekzzz/swifty/blob/main/LICENSE">LICENSE</a>, and it comes with no warranty. you may use, study, change and share it, and anything you share has to stay open source under the same license.</p>
+<p>it is made from <a href="https://github.com/swiftify-org/swiftify">Swiftify</a> by shred0s, and uses other projects under their own licences: Qt, SQLite, QCoro, the Rust crates the audio core is built from and the code in <code>third_party/</code>. the fonts are downloaded when you build, under their own licences. they are all listed in <a href="https://github.com/ImAlekzzz/swifty/blob/main/THIRD_PARTY_LICENSES.md">THIRD_PARTY_LICENSES.md</a>, and every install carries it, with the licences it needs, in <code>share/licenses/swifty</code>.</p>
+<p>the design follows Material 3 Expressive, with a lot of inspiration from <a href="https://github.com/end-4/dots-hyprland">end-4’s dots-hyprland</a>. the interface fonts are Google Sans Flex and Material Symbols Rounded.</p>
 </section>
 </main>
 
-<footer>Made by <a href="https://github.com/ImAlekzzz">ImAlekzzz</a> · <a href="https://github.com/ImAlekzzz/swifty/releases">Releases</a> · <a href="https://github.com/ImAlekzzz/swifty/issues">Issues</a> · <a href="https://imalekzzz.github.io/Swifty/docs/TOS/">Terms of Service</a> · <a href="https://imalekzzz.github.io/Swifty/docs/privacy-policy/">Privacy Policy</a></footer>
+<footer>Made by <a href="https://github.com/ImAlekzzz">ImAlekzzz</a> · <a href="https://github.com/ImAlekzzz/swifty/releases">Releases</a> · <a href="https://github.com/ImAlekzzz/swifty/issues">Issues</a> · <a href="https://imalekzzz.github.io/swifty/docs/TOS/">Terms of Service</a> · <a href="https://imalekzzz.github.io/swifty/docs/privacy-policy/">Privacy Policy</a></footer>
 
 <script>
 (function(){
