@@ -1,3 +1,7 @@
+<div align="center">
+
+<img src="packaging/icons/swifty-256.png" width="128" alt="swifty">
+
 # Swifty
 
 a local music player for desktop, built with Qt Quick on top of a Rust audio core.
