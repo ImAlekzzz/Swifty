@@ -15,7 +15,7 @@ only knows your own files. forked by ImAlekzzz.
 <table border="0">
   <tr>
     <td><img src="assets/eq.png" alt="equalizer, tempo and pitch" width="400"/></td>
-    <td><img src="assets/immersive.png" alt="synced lyrics in the player" width="400"/></td>
+    <td><img src="assets/immersive.png" alt="immersive players" width="400"/></td>
   </tr>
 </table>
 
