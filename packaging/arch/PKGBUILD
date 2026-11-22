@@ -1,7 +1,7 @@
 # Maintainer: ImAlekzzz
 # Builds the checkout this file sits in: run `makepkg -si` from this folder.
 pkgname=swifty
-pkgver=0.3.3
+pkgver=1.4.2
 pkgrel=1
 pkgdesc='A local music player for Wayland, in Material 3 after end4'
 url='https://github.com/ImAlekzzz/swifty'

@@ -20,7 +20,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(Swifty
-    VERSION 0.3.3
+    VERSION 1.4.2
     DESCRIPTION "A native local music player"
     LANGUAGES C CXX)
 

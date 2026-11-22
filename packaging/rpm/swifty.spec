@@ -9,7 +9,7 @@
 # it needs the network while it builds: cmake fetches Corrosion, cargo fetches the Rust
 # crates, and the interface and icon fonts are downloaded (each checked against a hash).
 
-%{!?swifty_version:%global swifty_version 0.3.3}
+%{!?swifty_version:%global swifty_version 1.4.2}
 
 # the Rust core is not built with Fedora's lto and has no debuginfo of its own
 %global _lto_cflags %{nil}
@@ -95,5 +95,5 @@ fi
 %{_datadir}/icons/hicolor/*/apps/swifty.png
 
 %changelog
-* Sun Nov 15 2026 ImAlekzzz - 0.3.3-1
+* Sun Nov 15 2026 ImAlekzzz - 1.4.2
 - Swifty as an RPM: local files, SQLite playlists and library cache, Discord rich presence
