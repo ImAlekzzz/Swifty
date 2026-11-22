@@ -10,12 +10,12 @@ only knows your own files. forked by ImAlekzzz.
 
 > don't expect frequent updates, maybe once in a while.
 
-![Home](assets/Home.png)
+![Home](assets/home.png)
 
 <table border="0">
   <tr>
-    <td><img src="assets/Play-Eq.png" alt="equalizer, tempo and pitch" width="400"/></td>
-    <td><img src="assets/Play-Lyrics.png" alt="synced lyrics in the player" width="400"/></td>
+    <td><img src="assets/eq.png" alt="equalizer, tempo and pitch" width="400"/></td>
+    <td><img src="assets/immersive.png" alt="synced lyrics in the player" width="400"/></td>
   </tr>
 </table>
 
